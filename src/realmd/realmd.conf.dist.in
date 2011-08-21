@@ -107,8 +107,8 @@ ConfVersion=2010062001
 #
 ###################################################################################################################
 
-LoginDatabaseInfo = "127.0.0.1;3306;mangos;mangos;realmd"
-LogsDir = ""
+LoginDatabaseInfo = "127.0.0.1;3306;root;mangos;wowrealmd"
+LogsDir = "Logs/"
 MaxPingTime = 30
 RealmServerPort = 3724
 BindIP = "0.0.0.0"
@@ -118,8 +118,8 @@ LogTime = 0
 LogFile = "Realmd.log"
 LogTimestamp = 0
 LogFileLevel = 0
-LogColors = ""
-UseProcessors = 0
+LogColors = "13 7 11 9"
+UseProcessors = 4
 ProcessPriority = 1
 WaitAtStartupError = 0
 RealmsStateUpdateDelay = 20

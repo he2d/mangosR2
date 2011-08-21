@@ -9756,7 +9756,7 @@ void Spell::EffectStuck(SpellEffectIndex /*eff_idx*/)
     if (pTarget->IsTaxiFlying() || pTarget->InBattleGround())
         return;
 
-    pTarget->RepopAtGraveyard();
+    pTarget->TeleportToHomebind(unitTarget==m_caster ? TELE_TO_SPELL : 0);
 
     // Stuck spell trigger Hearthstone cooldown
     SpellEntry const *spellInfo = sSpellStore.LookupEntry(8690);
