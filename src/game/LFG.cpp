@@ -31,7 +31,12 @@ void LFGStateStructure::SetDungeons(LFGDungeonSet* dungeons)
     if (m_DungeonsList.empty())
         m_type = LFG_TYPE_NONE;
     else
-        m_type = LFGType((*m_DungeonsList.begin())->type);
+    {
+        if (LFGDungeonEntry const* entry = *m_DungeonsList.begin())
+            m_type = LFGType(entry->type);
+        else
+            m_type = LFG_TYPE_NONE;
+    }
 };
 
 void LFGStateStructure::RemoveDungeon(LFGDungeonEntry const* dungeon)
@@ -41,7 +46,12 @@ void LFGStateStructure::RemoveDungeon(LFGDungeonEntry const* dungeon)
     if (m_DungeonsList.empty())
         m_type = LFG_TYPE_NONE;
     else
-        m_type = LFGType((*m_DungeonsList.begin())->type);
+    {
+        if (LFGDungeonEntry const* entry = *m_DungeonsList.begin())
+            m_type = LFGType(entry->type);
+        else
+            m_type = LFG_TYPE_NONE;
+    }
 };
 
 void LFGStateStructure::AddDungeon(LFGDungeonEntry const* dungeon)
@@ -320,6 +330,7 @@ void LFGProposal::RemoveMember(ObjectGuid guid)
     if (guid.IsEmpty())
         return;
 
+    LFGMgr::WriteGuard Guard(sLFGMgr.GetLock());
     LFGQueueSet::iterator itr = playerGuids.find(guid);
     if (itr != playerGuids.end())
         playerGuids.erase(itr);
