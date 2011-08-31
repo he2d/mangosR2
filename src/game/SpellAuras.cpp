@@ -607,7 +607,7 @@ void AreaAura::Update(uint32 diff)
                         for(GroupReference *itr = pGroup->GetFirstMember(); itr != NULL; itr = itr->next())
                         {
                             Player* Target = itr->getSource();
-                            if (Target && Target->isAlive() && Target->GetSubGroup()==subgroup && caster->IsFriendlyTo(Target))
+                            if (Target && Target->IsInWorld() && Target->isAlive() && Target->GetSubGroup()==subgroup && caster->IsInWorld() && caster->IsFriendlyTo(Target))
                             {
                                 if (caster->IsWithinDistInMap(Target, m_radius))
                                     targets.push_back(Target);
@@ -2120,6 +2120,12 @@ void Aura::TriggerSpell()
                 // original caster must be target
                 target->CastSpell(target, trigger_spell_id, true, NULL, this, target->GetObjectGuid());
                 return;
+            case 58678:                                     // Rock Shards (Vault of Archavon, Archavon)
+            {
+                if (GetAuraTicks() != 1 && GetAuraTicks()%7)
+                    return;
+                break;
+            }
             case 56654:                                     // Rapid Recuperation (triggered energize have baspioints == 0)
             case 58882:
             {
@@ -2379,6 +2385,9 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
                         return;
                     case 52921:                             // Arc Lightning (Halls of Lighning: Loken)
                         target->CastSpell(target, 52924, false);
+                        return;
+                    case 54236:                             // Death Touch - Lich King kill Overlord Drakuru
+                        target->CastSpell(target, 54248, false);    // Cast Drakuru Death
                         return;
                     case 55328:                                 // Stoneclaw Totem I
                         target->CastSpell(target, 5728, true);
