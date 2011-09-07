@@ -1011,7 +1011,7 @@ CheckGOInPath = 0
 ###################################################################################################################
 
 AllowTwoSide.Accounts = 1
-AllowTwoSide.Interaction.Chat = 
+AllowTwoSide.Interaction.Chat = 1
 AllowTwoSide.Interaction.Channel = 1
 AllowTwoSide.Interaction.Group = 1
 AllowTwoSide.Interaction.Guild = 0
