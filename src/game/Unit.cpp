@@ -5263,7 +5263,7 @@ void Unit::RemoveArenaAuras(bool onleave)
                                                             // don't remove stances, shadowform, pally/hunter auras
             !iter->second->IsPassive() &&                   // don't remove passive auras
             (!(iter->second->GetSpellProto()->Attributes & SPELL_ATTR_UNAFFECTED_BY_INVULNERABILITY) ||
-            !(iter->second->GetSpellProto()->Attributes & SPELL_ATTR_UNK8)) &&
+            !(iter->second->GetSpellProto()->Attributes & SPELL_ATTR_HIDE_IN_COMBAT_LOG)) &&
                                                             // not unaffected by invulnerability auras or not having that unknown flag (that seemed the most probable)
             (iter->second->IsPositive() != onleave))        // remove positive buffs on enter, negative buffs on leave
         {
@@ -9720,6 +9720,22 @@ void Unit::ApplyDiminishingToDuration(DiminishingGroup group, int32 &duration,Un
             case DIMINISHING_LEVEL_1: break;
             case DIMINISHING_LEVEL_2: mod = 0.5f; break;
             case DIMINISHING_LEVEL_3: mod = 0.25f; break;
+            case DIMINISHING_LEVEL_4:
+            case DIMINISHING_LEVEL_5:
+            case DIMINISHING_LEVEL_IMMUNE: mod = 0.0f;break;
+            default: break;
+        }
+    }
+    else if (GetTypeId() == TYPEID_UNIT && (((Creature*)this)->GetCreatureInfo()->flags_extra &  CREATURE_FLAG_EXTRA_TAUNT_DIMINISHING) && GetDiminishingReturnsGroupType(group) == DRTYPE_TAUNT)
+    {
+        DiminishingLevels diminish = Level;
+        switch(diminish)
+        {
+            case DIMINISHING_LEVEL_1: break;
+            case DIMINISHING_LEVEL_2: mod = 0.65f;   break;
+            case DIMINISHING_LEVEL_3: mod = 0.4225f; break;
+            case DIMINISHING_LEVEL_4: mod = 0.2747f; break;
+            case DIMINISHING_LEVEL_5: mod = 0.1785f; break;
             case DIMINISHING_LEVEL_IMMUNE: mod = 0.0f;break;
             default: break;
         }

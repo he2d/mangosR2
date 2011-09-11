@@ -5082,7 +5082,6 @@ void Spell::EffectEnergize(SpellEffectIndex eff_idx)
         case 63375:                                         // Improved Stormstrike
         case 67545:                                         // Empowered Fire
         case 68082:                                         // Glyph of Seal of Command
-        case 71132:                                         // Glyph of Shadow Word: Pain
             damage = damage * unitTarget->GetCreateMana() / 100;
             break;
         case 67487:                                         // Mana Potion Injector
@@ -6128,7 +6127,7 @@ void Spell::DoSummonVehicle(SpellEffectIndex eff_idx, uint32 forceFaction)
 
     if (m_caster->hasUnitState(UNIT_STAT_ON_VEHICLE))
     {
-        if (m_spellInfo->Attributes & SPELL_ATTR_UNK7)
+        if (m_spellInfo->Attributes & SPELL_ATTR_HIDDEN_CLIENTSIDE)
             m_caster->RemoveSpellsCausingAura(SPELL_AURA_CONTROL_VEHICLE);
         else
             return;
