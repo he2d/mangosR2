@@ -3575,6 +3575,15 @@ SpellAuraProcResult Unit::HandleProcTriggerSpellAuraProc(Unit *pVictim, uint32 d
                     if (GetStat(STAT_AGILITY)  > stat) { trigger_spell_id = 67772;                               }
                     break;
                 }
+                case 69023:                                 // Mirrored Soul
+                {
+                    int32 basepoints = (int32) (damage * 0.45f);
+                    if (Unit* caster = triggeredByAura->GetCaster())
+                        // Actually this spell should be sent with SMSG_SPELL_START
+                        CastCustomSpell(caster, 69034, &basepoints, NULL, NULL, true, NULL, triggeredByAura, GetObjectGuid());
+
+                    return SPELL_AURA_PROC_OK;
+                }
                 case 72178:                                 // Blood link Saurfang aura
                 {
                     target = this;
@@ -4582,8 +4591,7 @@ SpellAuraProcResult Unit::HandleMendingAuraProc( Unit* /*pVictim*/, uint32 /*dam
                         continue;
 
                     int32 basePoints = aur->GetBasePoints();
-                    Aura * new_aur = CreateAura(spellProto, aur->GetEffIndex(), &basePoints, new_holder, target, caster);
-                    new_holder->AddAura(new_aur, new_aur->GetEffIndex());
+                    new_holder->CreateAura(spellProto, aur->GetEffIndex(), &basePoints, target, caster, NULL);
                 }
                 new_holder->SetAuraCharges(jumps, false);
 
