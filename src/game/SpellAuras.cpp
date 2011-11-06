@@ -440,6 +440,13 @@ m_isPersistent(false), m_in_use(0), m_spellAuraHolder(holder)
     if (!(spellproto->AttributesEx5 & SPELL_ATTR_EX5_START_PERIODIC_AT_APPLY))
         m_periodicTimer = m_modifier.periodictime;
 
+    // Calculate CrowdControl damage start value
+    if (IsCrowdControlAura(m_modifier.m_auraname))
+    {
+        if (uint32 cc_base_damage = CalculateCrowdControlBreakDamage())
+            m_modifier.m_baseamount = cc_base_damage;
+    }
+
     m_stacking = IsEffectStacking();
 
     switch (type)
@@ -9979,6 +9986,9 @@ m_permanent(false), m_isRemovedOnShapeLost(true), m_deleted(false), m_in_use(0)
             m_stackAmount = m_spellProto->StackAmount;
             break;
     }
+
+    for (int32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+        RemoveAura(SpellEffectIndex(i));
 }
 
 void SpellAuraHolder::AddAura(Aura aura, SpellEffectIndex index)
@@ -10078,7 +10088,13 @@ void SpellAuraHolder::_AddSpellAuraHolder()
         }
     }
 
-    uint8 flags = GetAuraFlags() | ((GetCasterGuid() == GetTarget()->GetObjectGuid()) ? AFLAG_NOT_CASTER : AFLAG_NONE) | ((GetSpellMaxDuration(m_spellProto) > 0 && !(m_spellProto->AttributesEx5 & SPELL_ATTR_EX5_NO_DURATION)) ? AFLAG_DURATION : AFLAG_NONE) | (IsPositive() ? AFLAG_POSITIVE : AFLAG_NEGATIVE);
+    uint8 flags = 0;
+    for (int32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+    {
+        if (GetAuraByEffectIndex(SpellEffectIndex(i)))
+            flags |= (1 << i);
+    }
+    flags |= ((GetCasterGuid() == GetTarget()->GetObjectGuid()) ? AFLAG_NOT_CASTER : AFLAG_NONE) | ((GetSpellMaxDuration(m_spellProto) > 0 && !(m_spellProto->AttributesEx5 & SPELL_ATTR_EX5_NO_DURATION)) ? AFLAG_DURATION : AFLAG_NONE) | (IsPositive() ? AFLAG_POSITIVE : AFLAG_NEGATIVE);
     SetAuraFlags(flags);
 
     SetAuraLevel(caster ? caster->getLevel() : sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL));
@@ -10182,6 +10198,7 @@ void SpellAuraHolder::_RemoveSpellAuraHolder()
     if (getDiminishGroup() != DIMINISHING_NONE )
         m_target->ApplyDiminishingAura(getDiminishGroup(), false);
 
+    SetAuraFlags(AFLAG_NONE);
     SetAuraLevel(0);
     SetVisibleAura(true);
 
@@ -10397,9 +10414,6 @@ void SpellAuraHolder::SetStackAmount(uint32 stackAmount)
 
 Unit* SpellAuraHolder::GetCaster() const
 {
-    if (GetAuraFlags() & AFLAG_NOT_CASTER)
-        return NULL;
-
     if (!m_target)
         return NULL;
 
@@ -11628,12 +11642,6 @@ bool SpellAuraHolder::IsAreaAura() const
 
 bool SpellAuraHolder::IsPositive() const
 {
-    if (GetAuraFlags() & AFLAG_POSITIVE)
-        return true;
-    else if (GetAuraFlags() & AFLAG_NEGATIVE)
-        return false;
-
-    // check, if no aura flags defined
     for (int32 i = 0; i < MAX_EFFECT_INDEX; ++i)
         if (Aura const* aur = GetAura(SpellEffectIndex(i)))
             if (!aur->IsPositive())
@@ -11754,17 +11762,14 @@ void Aura::HandleAuraFactionChange(bool apply, bool real)
 
 uint32 Aura::CalculateCrowdControlBreakDamage()
 {
-    // Damage cap for CC effects
     if (!GetTarget())
         return 0;
 
     if (!IsCrowdControlAura(m_modifier.m_auraname))
         return 0;
 
-    // The chance to dispel an aura depends on the damage taken with respect to the casters level.
-    // uint32 damageCap = getLevel() > 8 ? 25 * getLevel() - 150 : 50;
-
-    uint32 damageCap = (int32)((float)GetTarget()->GetCreateHealth() * 0.20f);
+    // Damage cap for CC effects
+    uint32 damageCap = (int32)((float)GetTarget()->GetMaxHealth() * sWorld.getConfig(CONFIG_FLOAT_CROWDCONTROL_HP_BASE));
 
     if (damageCap < 50)
         damageCap = 50;
@@ -11791,4 +11796,19 @@ uint32 Aura::CalculateCrowdControlBreakDamage()
         }
     }
     return damageCap;
+}
+
+bool Aura::IsAffectedByCrowdControlEffect(uint32 damage)
+{
+    if (!IsCrowdControlAura(m_modifier.m_auraname))
+        return false;
+
+    if (damage > m_modifier.m_baseamount)
+    {
+        m_modifier.m_baseamount = 0;
+        return false;
+    }
+
+    m_modifier.m_baseamount -= damage;
+    return true;
 }

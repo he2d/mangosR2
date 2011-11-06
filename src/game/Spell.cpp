@@ -3680,11 +3680,18 @@ void Spell::cast(bool skipCheck)
     }
     else
     {
+        if (GetCastTime())
+        {
+            m_caster->ProcDamageAndSpell(procTarget, m_procAttacker, 0, PROC_EX_CAST_END, 0, m_attackType, m_spellInfo);
+            // Immediate spell, no big deal
+            handle_immediate();
+        }
+        else
+        {
+            handle_immediate();
+            m_caster->ProcDamageAndSpell(procTarget, m_procAttacker, 0, PROC_EX_CAST_END, 0, m_attackType, m_spellInfo);
+        }
 
-        // Immediate spell, no big deal
-        handle_immediate();
-
-        m_caster->ProcDamageAndSpell(procTarget, m_procAttacker, 0, PROC_EX_CAST_END, 0, m_attackType, m_spellInfo);
     }
 
     m_caster->DecreaseCastCounter();
@@ -5870,7 +5877,7 @@ SpellCastResult Spell::CheckCast(bool strict)
                 {
                     // In BattleGround players can use only flags and banners
                     if ( ((Player*)m_caster)->InBattleGround() &&
-                        !((Player*)m_caster)->CanUseBattleGroundObject() )
+                        !((Player*)m_caster)->CanUseBattleGroundObject() && m_spellInfo->Id!= 1842 ) // Disarm Trap can be used
                         return SPELL_FAILED_TRY_AGAIN;
 
                     lockId = go->GetGOInfo()->GetLockId();
