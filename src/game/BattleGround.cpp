@@ -1193,10 +1193,10 @@ void BattleGround::RemovePlayerAtLeave(ObjectGuid guid, bool Transport, bool Sen
 
             if (!team) team = plr->GetTeam();
 
+            plr->RemoveArenaAuras(true);                // removes debuffs / dots etc., we don't want the player to die after porting out
             // if arena, remove the specific arena auras
             if (isArena())
             {
-                plr->RemoveArenaAuras(true);                // removes debuffs / dots etc., we don't want the player to die after porting out
                 bgTypeId=BATTLEGROUND_AA;                   // set the bg type to all arenas (it will be used for queue refreshing)
 
                 // unsummon current and summon old pet if there was one and there isn't a current pet
@@ -1289,6 +1289,8 @@ void BattleGround::Reset()
 
     // door-event2 is always 0
     m_ActiveEvents[BG_EVENT_DOOR] = 0;
+    m_ActiveEvents[IC_EVENT_BOSS_A] = 0;
+    m_ActiveEvents[IC_EVENT_BOSS_H] = 0;
     if (isArena())
     {
         m_ActiveEvents[ARENA_BUFF_EVENT] = BG_EVENT_NONE;
@@ -1358,7 +1360,6 @@ void BattleGround::AddPlayer(Player *plr)
     {
         plr->RemoveArenaSpellCooldowns();
         plr->RemoveArenaAuras();
-        plr->RemoveAllEnchantments(TEMP_ENCHANTMENT_SLOT);
         if (team == ALLIANCE)                               // gold
         {
             if (plr->GetTeam() == HORDE)
@@ -1685,7 +1686,7 @@ void BattleGround::OnObjectDBLoad(GameObject* obj)
 
 bool BattleGround::IsDoor(uint8 event1, uint8 event2)
 {
-    if (event1 == BG_EVENT_DOOR)
+    if (event1 == BG_EVENT_DOOR || event1 == IC_EVENT_BOSS_A || event1 == IC_EVENT_BOSS_H)
     {
         if (event2 > 0)
         {
@@ -1751,10 +1752,17 @@ void BattleGround::SpawnBGObject(ObjectGuid guid, uint32 respawntime)
         //we need to change state from GO_JUST_DEACTIVATED to GO_READY in case battleground is starting again
         if (obj->getLootState() == GO_JUST_DEACTIVATED)
             obj->SetLootState(GO_READY);
-        obj->SetRespawnTime(0);
+        obj->Respawn();
         map->Add(obj);
         if (obj->GetGOInfo()->type == GAMEOBJECT_TYPE_DESTRUCTIBLE_BUILDING)
             obj->Rebuild(NULL);
+
+        GameObjectData const *data = sObjectMgr.GetGOData(obj->GetGUIDLow());
+        if (data)
+        {
+            uint32 respawn = data->spawntimesecs;
+            obj->SetRespawnDelay(respawn);
+        }
     }
     else
     {
@@ -1777,13 +1785,28 @@ void BattleGround::SpawnBGCreature(ObjectGuid guid, uint32 respawntime)
     {
         obj->Respawn();
         map->Add(obj);
+        CreatureData const *data = sObjectMgr.GetCreatureData(obj->GetGUIDLow());
+        if (data)
+        {
+            uint32 respawn = data->spawntimesecs;
+            obj->SetRespawnDelay(respawn);
+        }
     }
     else
     {
         map->Add(obj);
         obj->SetRespawnDelay(respawntime);
+        if (obj->GetObjectGuid().IsVehicle())
+        {
+            if (obj->GetVehicleKit())
+                obj->GetVehicleKit()->RemoveAllPassengers();
+        }
         obj->SetDeathState(JUST_DIED);
         obj->RemoveCorpse();
+
+        float x, y, z, o;
+        obj->GetRespawnCoord(x,y,z,&o);
+        obj->NearTeleportTo(x,y,z,o);
     }
 }
 
@@ -1803,6 +1826,28 @@ bool BattleGround::DelObject(uint32 type)
     obj->Delete();
     m_BgObjects[type].Clear();
     return true;
+}
+
+void BattleGround::MakeInteractive(uint8 event1, uint8 event2, bool interactive)
+{
+    // make the gameobject clickable
+    uint32 objEvent = MAKE_PAIR32(event1, event2);
+    for (std::vector<ObjectGuid>::iterator itr = m_EventObjects[objEvent].gameobjects.begin(); itr != m_EventObjects[objEvent].gameobjects.end(); ++itr)
+    {
+        if (GameObject * pEventGameObject = GetBgMap()->GetGameObject((*itr)))
+        {
+            if (interactive)
+            {
+                if (pEventGameObject->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_NO_INTERACT))
+                    pEventGameObject->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_NO_INTERACT);
+            }
+            else
+            {
+                if (!pEventGameObject->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_NO_INTERACT))
+                    pEventGameObject->SetFlag(GAMEOBJECT_FLAGS, GO_FLAG_NO_INTERACT);
+            }
+        }
+    }
 }
 
 void BattleGround::SendMessageToAll(int32 entry, ChatMsg type, Player const* source)

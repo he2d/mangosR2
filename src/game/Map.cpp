@@ -1998,14 +1998,25 @@ void Map::ScriptsProcess()
                     break;
                 }
 
-                Unit * unit = (Unit*)source;
+                Unit* unit = (Unit*)source;
+
+                // Just turn around
+                if (step.script->x == 0.0f && step.script->y == 0.0f && step.script->z == 0.0f ||
+                    // Check point-to-point distance, hence revert effect of bounding radius
+                    unit->IsWithinDist3d(step.script->x, step.script->y, step.script->z, 0.01f - unit->GetObjectBoundingRadius()))
+                {
+                    unit->SetFacingTo(step.script->o);
+                    break;
+                }
+
+
                 if (step.script->moveTo.travelTime != 0)
                 {
                     float speed = unit->GetDistance(step.script->x, step.script->y, step.script->z) / ((float)step.script->moveTo.travelTime * 0.001f);
                     unit->MonsterMoveWithSpeed(step.script->x, step.script->y, step.script->z, speed);
                 }
                 else
-                    unit->NearTeleportTo(step.script->x, step.script->y, step.script->z, unit->GetOrientation());
+                    unit->NearTeleportTo(step.script->x, step.script->y, step.script->z, step.script->o != 0.0f ? step.script->o : unit->GetOrientation());
                 break;
             }
             case SCRIPT_COMMAND_FLAG_SET:
@@ -3511,11 +3522,13 @@ void Map::ForcedUnload()
             case 1:
             {
                 player->GetSession()->KickPlayer();
+                Remove(player, true);
                 break;
             }
             case 2:
             {
                 player->GetSession()->LogoutPlayer(false);
+                Remove(player, true);
                 break;
             }
             default:
@@ -3529,11 +3542,15 @@ void Map::ForcedUnload()
             if (InstanceData* iData = GetInstanceData())
                 iData->Save();
             break;
+        case 1:
+        case 2:
         default:
             break;
     }
 
     UnloadAll(true);
+
+    RemoveAllObjectsInRemoveList();
 
     SetBroken(false);
 }

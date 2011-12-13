@@ -29,6 +29,8 @@
 #define BG_EVENT_NONE 255
 // those generic events should get a high event id
 #define BG_EVENT_DOOR 254
+#define IC_EVENT_BOSS_A 251
+#define IC_EVENT_BOSS_H 252
 // only arena event
 // cause this buff apears 90sec after start in every bg i implement it here
 #define ARENA_BUFF_EVENT 253
@@ -207,8 +209,8 @@ enum ScoreType
     SCORE_TOWERS_DEFENDED       = 14,
     SCORE_SECONDARY_OBJECTIVES  = 15,
     //SA
-    SCORE_GATES_DESTROYED       = 18,
-    SCORE_DEMOLISHERS_DESTROYED = 19
+    SCORE_GATES_DESTROYED       = 16,
+    SCORE_DEMOLISHERS_DESTROYED = 17
 };
 
 enum BattleGroundType
@@ -228,6 +230,21 @@ enum BattleGroundTeamIndex
 {
     BG_TEAM_ALLIANCE        = 0,
     BG_TEAM_HORDE           = 1
+};
+
+enum VehicleFactions
+{
+    VEHICLE_FACTION_NEUTRAL = 35,
+    VEHICLE_FACTION_ALLIANCE = 3,
+    VEHICLE_FACTION_HORDE = 6
+};
+
+enum VehicleTypes
+{
+    VEHICLE_UNK = 0,
+    VEHICLE_BG_DEMOLISHER = 1,
+    VEHICLE_SA_CANNON = 2,
+    VEHICLE_IC_CATAPULT = 3,
 };
 
 #define BG_TEAMS_COUNT  2
@@ -504,7 +521,7 @@ class BattleGround
         void EventPlayerLoggedIn(Player* player, ObjectGuid plr_guid);
         void EventPlayerLoggedOut(Player* player);
 
-        virtual void EventPlayerDamageGO(Player* /*player*/, GameObject* /*target_obj*/, uint32 /*eventId*/) {}
+        virtual void EventPlayerDamageGO(Player* /*player*/, GameObject* /*target_obj*/, uint32 /*eventId*/, uint32 /*bySpellId*/) {}
         virtual void EventSpawnGOSA(Player* /*owner*/, Creature* /*obj*/, float /*x*/, float /*y*/, float /*z*/) {}
 
         /* Death related */
@@ -546,6 +563,7 @@ class BattleGround
         bool AddObject(uint32 type, uint32 entry, float x, float y, float z, float o, float rotation0, float rotation1, float rotation2, float rotation3, uint32 respawnTime = 0);
         void SpawnBGCreature(ObjectGuid guid, uint32 respawntime);
         bool DelObject(uint32 type);
+        void MakeInteractive(uint8 event1, uint8 event2, bool interactive);
 
         void DoorOpen(ObjectGuid guid);
         void DoorClose(ObjectGuid guid);
