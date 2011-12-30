@@ -909,10 +909,10 @@ void Spell::AddUnitTarget(Unit* pVictim, SpellEffectIndex effIndex)
         target.timeDelay = (uint64) floor(dist / m_spellInfo->speed * 1000.0f);
 
     }
-    // Spell catsed on self - mostly TRIGGER_MISSILE code
+    // Spell cast on self - mostly TRIGGER_MISSILE code
     else if (m_spellInfo->speed > 0.0f && affectiveObject && pVictim == affectiveObject)
     {
-        float dist = 5.0f;
+        float dist = 0.0f;
         if (m_targets.m_targetMask & TARGET_FLAG_DEST_LOCATION)
             dist = affectiveObject->GetDistance(m_targets.m_destX, m_targets.m_destY, m_targets.m_destZ);
 
@@ -1453,9 +1453,8 @@ void Spell::DoSpellHitOnUnit(Unit *unit, uint32 effectMask)
         else
         {
             m_spellAuraHolder->SetInUse(false);
-
-            if (!m_spellAuraHolder->IsDeleted())
-                unit->AddSpellAuraHolderToRemoveList(m_spellAuraHolder);
+            if (!unit->AddSpellAuraHolderToRemoveList(m_spellAuraHolder))
+                DEBUG_LOG("Spell::DoSpellHitOnUnit cannot insert SpellAuraHolder (spell %u) to remove list!", m_spellAuraHolder ? m_spellAuraHolder->GetId() : 0);
         }
     }
 }
@@ -3343,7 +3342,7 @@ void Spell::prepare(SpellCastTargets const* targets, Aura* triggeredByAura)
 
     // create and add update event for this spell
     SpellEvent* Event = new SpellEvent(this);
-    m_caster->m_Events.AddEvent(Event, m_caster->m_Events.CalculateTime(1));
+    m_caster->AddEvent(Event, 1);
 
     //Prevent casting at cast another spell (ServerSide check)
     if (m_caster->IsNonMeleeSpellCasted(false, true, true) && m_cast_count)
@@ -5098,11 +5097,11 @@ void Spell::HandleThreatSpells()
 
     SpellThreatEntry const* threatEntry = sSpellMgr.GetSpellThreatEntry(m_spellInfo->Id);
 
-    if (!threatEntry || (!threatEntry->threat && threatEntry->ap_bonus == 0.0f))
+    if (!threatEntry || (!threatEntry->threat && fabs(threatEntry->ap_bonus) < M_NULL_F))
         return;
 
     float threat = threatEntry->threat;
-    if (threatEntry->ap_bonus != 0.0f)
+    if (fabs(threatEntry->ap_bonus) > M_NULL_F)
         threat += threatEntry->ap_bonus * m_caster->GetTotalAttackPowerValue(GetWeaponAttackType(m_spellInfo));
 
     bool positive = true;
@@ -6525,8 +6524,8 @@ SpellCastResult Spell::CheckPetCast(Unit* target)
                 need = true;
                 if(!target)
                 {
-                    return SPELL_FAILED_BAD_IMPLICIT_TARGETS;
                     DEBUG_LOG("Charmed creature attempt to cast spell %u, but no required target",m_spellInfo->Id);
+                    return SPELL_FAILED_BAD_IMPLICIT_TARGETS;
                 }
                 break;
             }
@@ -6688,11 +6687,11 @@ SpellCastResult Spell::CheckCasterAuras() const
         if (school_immune || mechanic_immune || dispel_immune)
         {
             //Checking auras is needed now, because you are prevented by some state but the spell grants immunity.
+            MAPLOCK_READ(m_caster, MAP_LOCK_TYPE_AURAS);
             Unit::SpellAuraHolderMap const& auras = m_caster->GetSpellAuraHolderMap();
             for(Unit::SpellAuraHolderMap::const_iterator itr = auras.begin(); itr != auras.end(); ++itr)
             {
-                SpellAuraHolderPtr holder = itr->second;
-                SpellEntry const * pEntry = holder->GetSpellProto();
+                SpellEntry const * pEntry = itr->second->GetSpellProto();
 
                 if ((GetSpellSchoolMask(pEntry) & school_immune) && !(pEntry->AttributesEx & SPELL_ATTR_EX_UNAFFECTED_BY_SCHOOL_IMMUNE))
                     continue;
@@ -6701,7 +6700,7 @@ SpellCastResult Spell::CheckCasterAuras() const
 
                 for (int32 i = 0; i < MAX_EFFECT_INDEX; ++i)
                 {
-                    Aura *aura = holder->GetAuraByEffectIndex(SpellEffectIndex(i));
+                    Aura *aura = itr->second->GetAuraByEffectIndex(SpellEffectIndex(i));
                     if (!aura)
                         continue;
 
@@ -7841,7 +7840,7 @@ bool SpellEvent::Execute(uint64 e_time, uint32 p_time)
                     if (n_offset)
                     {
                         // re-add us to the queue
-                        m_Spell->GetCaster()->m_Events.AddEvent(this, m_Spell->GetDelayStart() + n_offset, false);
+                        m_Spell->GetCaster()->AddEvent(this, m_Spell->GetDelayStart() + n_offset, false);
                         return false;                       // event not complete
                     }
                     // event complete
@@ -7853,7 +7852,7 @@ bool SpellEvent::Execute(uint64 e_time, uint32 p_time)
                 // delaying had just started, record the moment
                 m_Spell->SetDelayStart(e_time);
                 // re-plan the event for the delay moment
-                m_Spell->GetCaster()->m_Events.AddEvent(this, e_time + m_Spell->GetDelayMoment(), false);
+                m_Spell->GetCaster()->AddEvent(this, e_time + m_Spell->GetDelayMoment(), false);
                 return false;                               // event not complete
             }
         } break;
@@ -7866,7 +7865,7 @@ bool SpellEvent::Execute(uint64 e_time, uint32 p_time)
     }
 
     // spell processing not complete, plan event on the next update interval
-    m_Spell->GetCaster()->m_Events.AddEvent(this, e_time + 1, false);
+    m_Spell->GetCaster()->AddEvent(this, e_time + 1, false);
     return false;                                           // event not complete
 }
 
@@ -8588,11 +8587,18 @@ bool Spell::FillCustomTargetMap(SpellEffectIndex i, UnitList &targetUnitMap)
             targetUnitMap.remove(m_caster);
             break;
         }
-        case 62589: // Nature's Fury (10 man)
-        case 63571: // Nature's Fury (25 man)
+        case 63278: // Mark of Faceless
         {
-            FillAreaTargets(targetUnitMap, radius, PUSH_DEST_CENTER, SPELL_TARGETS_AOE_DAMAGE);
-            targetUnitMap.remove(m_caster); // exclude caster
+            if (i != EFFECT_INDEX_1)
+                return false;
+
+            Unit* currentTarget = m_targets.getUnitTarget();
+            if (currentTarget)
+            {
+                m_targets.setDestination(currentTarget->GetPositionX(), currentTarget->GetPositionY(), currentTarget->GetPositionZ());
+                FillAreaTargets(targetUnitMap, radius, PUSH_DEST_CENTER, SPELL_TARGETS_AOE_DAMAGE);
+                targetUnitMap.remove(currentTarget);
+            }
             break;
         }
         case 65044: // Flames
