@@ -26,7 +26,6 @@
 #include "WorldPacket.h"
 #include "WorldSession.h"
 #include "UpdateMask.h"
-#include "SkillDiscovery.h"
 #include "QuestDef.h"
 #include "GossipDef.h"
 #include "UpdateData.h"
@@ -2306,10 +2305,10 @@ Creature* Player::GetNPCIfCanInteractWith(ObjectGuid guid, uint32 npcflagmask)
         return NULL;
 
     // not unfriendly
-    if (FactionTemplateEntry const* factionTemplate = sFactionTemplateStore.LookupEntry(unit->getFaction()))
-        if (factionTemplate->faction)
-            if (FactionEntry const* faction = sFactionStore.LookupEntry(factionTemplate->faction))
-                if (faction->reputationListID >= 0 && GetReputationMgr().GetRank(faction) <= REP_UNFRIENDLY)
+    if(FactionTemplateEntry const* factionTemplate = sFactionTemplateStore.LookupEntry(unit->getFaction()))
+        if(factionTemplate->faction)
+            if(FactionEntry const* faction = sFactionStore.LookupEntry(factionTemplate->faction))
+                if(faction->reputationListID >= 0 && GetReputationMgr().GetRank(faction, true) <= REP_UNFRIENDLY)
                     return NULL;
 
     // not too far
@@ -5611,7 +5610,7 @@ bool Player::UpdateCraftSkill(uint32 spellid)
             SpellEntry const* spellEntry = sSpellStore.LookupEntry(spellid);
             if (spellEntry && spellEntry->Mechanic == MECHANIC_DISCOVERY)
             {
-                if (uint32 discoveredSpell = GetSkillDiscoverySpell(_spell_idx->second->skillId, spellid, this))
+                if (uint32 discoveredSpell = sSpellMgr.GetSkillDiscoverySpell(_spell_idx->second->skillId, spellid, this))
                     learnSpell(discoveredSpell, false);
             }
 
@@ -6542,7 +6541,7 @@ void Player::setFactionForRace(uint8 race)
 ReputationRank Player::GetReputationRank(uint32 faction) const
 {
     FactionEntry const* factionEntry = sFactionStore.LookupEntry(faction);
-    return GetReputationMgr().GetRank(factionEntry);
+    return GetReputationMgr().GetRank(factionEntry, false);
 }
 
 //Calculate total reputation percent player gain with quest/creature level
@@ -6644,8 +6643,8 @@ void Player::RewardReputation(Unit *pVictim, float rate)
     {
         int32 donerep1 = CalculateReputationGain(REPUTATION_SOURCE_KILL, Rep->repvalue1, Repfaction1, pVictim->getLevel());
         donerep1 = int32(donerep1*rate);
-        FactionEntry const *factionEntry1 = sFactionStore.LookupEntry(Repfaction1);
-        uint32 current_reputation_rank1 = GetReputationMgr().GetRank(factionEntry1);
+        FactionEntry const *factionEntry1 = sFactionStore.LookupEntry(Rep->repfaction1);
+        uint32 current_reputation_rank1 = GetReputationMgr().GetRank(factionEntry1, false);
         if (factionEntry1 && current_reputation_rank1 <= Rep->reputation_max_cap1)
             GetReputationMgr().ModifyReputation(factionEntry1, donerep1);
 
@@ -6662,8 +6661,8 @@ void Player::RewardReputation(Unit *pVictim, float rate)
     {
         int32 donerep2 = CalculateReputationGain(REPUTATION_SOURCE_KILL, Rep->repvalue2, Repfaction2, pVictim->getLevel());
         donerep2 = int32(donerep2*rate);
-        FactionEntry const *factionEntry2 = sFactionStore.LookupEntry(Repfaction2);
-        uint32 current_reputation_rank2 = GetReputationMgr().GetRank(factionEntry2);
+        FactionEntry const *factionEntry2 = sFactionStore.LookupEntry(Rep->repfaction2);
+        uint32 current_reputation_rank2 = GetReputationMgr().GetRank(factionEntry2, false);
         if (factionEntry2 && current_reputation_rank2 <= Rep->reputation_max_cap2)
             GetReputationMgr().ModifyReputation(factionEntry2, donerep2);
 
@@ -8815,7 +8814,7 @@ void Player::SendUpdateWorldState(uint32 Field, uint32 Value)
     data << Value;
 
     // Tempfix before WorldStateMgr implementing
-    if (IsInWorld())
+    if (IsInWorld() && GetSession())
         GetSession()->SendPacket(&data);
 }
 
@@ -11282,6 +11281,10 @@ InventoryResult Player::CanEquipItem( uint8 slot, uint16 &dest, Item *pItem, boo
             uint8 eslot = FindEquipSlot( pProto, slot, swap );
             if (eslot == NULL_SLOT)
                 return EQUIP_ERR_ITEM_CANT_BE_EQUIPPED;
+
+            // jewelcrafting gem check
+            if (InventoryResult res2 = CanEquipMoreJewelcraftingGems(pItem->GetJewelcraftingGemCount(), swap ? eslot : NULL_SLOT))
+                return res2;
 
             InventoryResult msg = CanUseItem(pItem , direct_action);
             if (msg != EQUIP_ERR_OK)
@@ -21008,6 +21011,10 @@ void Player::LeaveBattleground(bool teleportToEntryPoint)
                 CastSpell(this, 26013, true);               // Deserter
             }
         }
+
+        // Prevent more execute BG update codes
+        if (bg->isBattleGround() && bg->GetStatus() == STATUS_IN_PROGRESS && !bg->GetPlayersSize())
+            bg->SetStatus(STATUS_WAIT_LEAVE);
     }
 }
 
@@ -23122,6 +23129,33 @@ InventoryResult Player::CanEquipUniqueItem( ItemPrototype const* itemProto, uint
         // there is an equip limit on this item
         if (HasItemOrGemWithLimitCategoryEquipped(itemProto->ItemLimitCategory,limitEntry->maxCount-limit_count+1,except_slot))
             return EQUIP_ERR_ITEM_MAX_LIMIT_CATEGORY_EQUIPPED_EXCEEDED_IS;
+    }
+
+    return EQUIP_ERR_OK;
+}
+
+InventoryResult Player::CanEquipMoreJewelcraftingGems(uint32 count, uint8 except_slot) const
+{
+    //uint32 tempcount = count;
+    for (int i = EQUIPMENT_SLOT_START; i < EQUIPMENT_SLOT_END; ++i)
+    {
+        if (i == int(except_slot))
+            continue;
+
+        Item *pItem = GetItemByPos(INVENTORY_SLOT_BAG_0, i);
+        if (!pItem)
+            continue;
+
+        ItemPrototype const *pProto = pItem->GetProto();
+        if (!pProto)
+            continue;
+
+        if (pProto->Socket[0].Color || pItem->GetEnchantmentId(PRISMATIC_ENCHANTMENT_SLOT))
+        {
+            count += pItem->GetJewelcraftingGemCount();
+            if (count > MAX_JEWELCRAFTING_GEMS)
+                return EQUIP_ERR_ITEM_MAX_COUNT_EQUIPPED_SOCKETED;
+        }
     }
 
     return EQUIP_ERR_OK;
