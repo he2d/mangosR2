@@ -148,6 +148,7 @@ inline bool IsEffectHandledOnDelayedSpellLaunch(SpellEntry const *spellInfo, Spe
         case SPELL_EFFECT_WEAPON_PERCENT_DAMAGE:
         case SPELL_EFFECT_WEAPON_DAMAGE:
         case SPELL_EFFECT_NORMALIZED_WEAPON_DMG:
+        case SPELL_EFFECT_CHARGE:
             return true;
         default:
             return false;
@@ -290,6 +291,9 @@ bool IsPositiveSpell(uint32 spellId);
 bool IsPositiveSpell(SpellEntry const *spellproto);
 bool IsPositiveEffect(SpellEntry const *spellInfo, SpellEffectIndex effIndex);
 bool IsPositiveTarget(uint32 targetA, uint32 targetB);
+
+bool IsNonPositiveSpell(uint32 spellId);
+bool IsNonPositiveSpell(SpellEntry const* spellproto);
 
 bool IsExplicitPositiveTarget(uint32 targetA);
 bool IsExplicitNegativeTarget(uint32 targetA);

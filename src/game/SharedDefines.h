@@ -491,7 +491,7 @@ const uint32 ItemQualityColors[MAX_ITEM_QUALITY] = {
 #define SPELL_ATTR_EX7_UNK15                      0x00008000            // 15
 #define SPELL_ATTR_EX7_UNK16                      0x00010000            // 16
 #define SPELL_ATTR_EX7_UNK17                      0x00020000            // 17
-#define SPELL_ATTR_EX7_UNK18                      0x00040000            // 18
+#define SPELL_ATTR_EX7_HAS_CHARGE_EFFECT          0x00040000            // 18 Only spell with Charge effect (used for calculate traectory/delay)
 #define SPELL_ATTR_EX7_UNK19                      0x00080000            // 19
 #define SPELL_ATTR_EX7_UNK20                      0x00100000            // 20
 #define SPELL_ATTR_EX7_UNK21                      0x00200000            // 21
@@ -1084,10 +1084,10 @@ enum AuraState
     AURA_STATE_DEADLY_POISON                = 16,           //   T |
     AURA_STATE_ENRAGE                       = 17,           // C   |
     AURA_STATE_BLEEDING                     = 18,           // C  t|
-    //AURA_STATE_UNKNOWN19                  = 19,           //     | not used
+    AURA_STATE_DARK_TARGET                  = 19,           //     | targeting for light/Gas spells
     //AURA_STATE_UNKNOWN20                  = 20,           //  c  | only (45317 Suicide)
-    //AURA_STATE_UNKNOWN21                  = 21,           //     | not used
-    //AURA_STATE_UNKNOWN22                  = 22,           // C   | not implemented yet (Requires Evasive Charges to use)
+    AURA_STATE_SPELLFIRE                    = 21,           //     | Spellfire (targeting, NYI)
+    AURA_STATE_LIGHT_TARGET                 = 22,           // C   | targeting for dark/Ooze spells
     AURA_STATE_HEALTH_ABOVE_75_PERCENT      = 23,           // C   |
 };
 

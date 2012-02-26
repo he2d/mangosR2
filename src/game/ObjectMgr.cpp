@@ -2812,10 +2812,10 @@ void ObjectMgr::LoadPetLevelInfo()
                     pInfo[level].mindmg = uint16(pInfo[sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL)-1].mindmg * (petBaseInfo[level].mindmg / petBaseInfo[sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL)-1].mindmg));
 
                 if(pInfo[level].maxdmg == 0)
-                    pInfo[level].mana = uint16(pInfo[sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL)-1].maxdmg * (petBaseInfo[level].maxdmg / petBaseInfo[sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL)-1].maxdmg));
+                    pInfo[level].maxdmg = uint16(pInfo[sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL)-1].maxdmg * (petBaseInfo[level].maxdmg / petBaseInfo[sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL)-1].maxdmg));
 
                 if(pInfo[level].attackpower == 0)
-                    pInfo[level].mana = uint16(pInfo[sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL)-1].attackpower * (petBaseInfo[level].attackpower / petBaseInfo[sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL)-1].attackpower));
+                    pInfo[level].attackpower = uint16(pInfo[sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL)-1].attackpower * (petBaseInfo[level].attackpower / petBaseInfo[sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL)-1].attackpower));
 
                 for (int i = 0; i < MAX_STATS; i++)
                 {
@@ -5904,7 +5904,7 @@ void ObjectMgr::LoadAreaTriggerTeleports()
         at.combatMode           = fields[20].GetUInt32();
 
         AreaTriggerEntry const* atEntry = sAreaTriggerStore.LookupEntry(Trigger_ID);
-        if (!atEntry)
+        if (!atEntry && !sWorld.getConfig(CONFIG_BOOL_ALLOW_CUSTOM_MAPS))
         {
             sLog.outErrorDb("Table `areatrigger_teleport` has area trigger (ID:%u) not listed in `AreaTrigger.dbc`.", Trigger_ID);
             continue;
@@ -5997,10 +5997,17 @@ void ObjectMgr::LoadAreaTriggerTeleports()
             continue;
         }
 
-        if (at.target_X==0 && at.target_Y==0 && at.target_Z==0)
+        if ( fabs(at.target_X) < M_NULL_F && fabs(at.target_Y) < M_NULL_F && fabs(at.target_Z) < M_NULL_F)
         {
-            sLog.outErrorDb("Table `areatrigger_teleport` has area trigger (ID:%u) without target coordinates.",Trigger_ID);
-            continue;
+            if (!sWorld.getConfig(CONFIG_BOOL_ALLOW_CUSTOM_MAPS))
+            {
+                sLog.outErrorDb("Table `areatrigger_teleport` has area trigger (ID:%u) without target coordinates.",Trigger_ID);
+                continue;
+            }
+            else
+            {
+                sLog.outDetail("Table `areatrigger_teleport` has area trigger (ID:%u) without correct target coordinates.",Trigger_ID);
+            }
         }
 
         mAreaTriggers[Trigger_ID] = at;
@@ -6029,6 +6036,8 @@ AreaTrigger const* ObjectMgr::GetGoBackTrigger(uint32 map_id) const
             AreaTriggerEntry const* atEntry = sAreaTriggerStore.LookupEntry(itr->first);
             if(atEntry && atEntry->mapid == map_id)
                 return &itr->second;
+            else if (sWorld.getConfig(CONFIG_BOOL_ALLOW_CUSTOM_MAPS))
+                return &itr->second;
         }
     }
     return NULL;
@@ -6045,6 +6054,8 @@ AreaTrigger const* ObjectMgr::GetMapEntranceTrigger(uint32 Map) const
         {
             AreaTriggerEntry const* atEntry = sAreaTriggerStore.LookupEntry(itr->first);
             if(atEntry)
+                return &itr->second;
+            else if (sWorld.getConfig(CONFIG_BOOL_ALLOW_CUSTOM_MAPS))
                 return &itr->second;
         }
     }
@@ -8547,7 +8558,7 @@ GameTele const* ObjectMgr::GetGameTele(const std::string& name) const
     // explicit name case
     std::wstring wname;
     if(!Utf8toWStr(name,wname))
-        return false;
+        return NULL;
 
     // converting string that we try to find to lower case
     wstrToLower( wname );

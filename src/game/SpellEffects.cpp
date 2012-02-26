@@ -4689,7 +4689,7 @@ void Spell::EffectTriggerMissileSpell(SpellEffectIndex effect_idx)
 
     MaNGOS::NormalizeMapCoord(x);
     MaNGOS::NormalizeMapCoord(y);
-    m_caster->UpdateGroundPositionZ(x,y,z);
+    m_caster->UpdateAllowedPositionZ(x,y,z);
 
     m_caster->CastSpell(x, y, z, spellInfo, true, m_CastItem, 0, m_originalCasterGUID);
 }
@@ -5685,6 +5685,11 @@ void Spell::EffectEnergisePct(SpellEffectIndex eff_idx)
 
 void Spell::SendLoot(ObjectGuid guid, LootType loottype, LockType lockType)
 {
+    if (!m_caster)
+        return;
+
+    m_caster->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_USE);
+
     if (gameObjTarget)
     {
         switch (gameObjTarget->GetGoType())
@@ -5881,6 +5886,10 @@ void Spell::EffectApplyAreaAura(SpellEffectIndex eff_idx)
         return;
 
     m_spellAuraHolder->CreateAura(AURA_CLASS_AREA_AURA, eff_idx, &m_currentBasePoints[eff_idx], m_spellAuraHolder, unitTarget, m_caster, m_CastItem);
+
+    if (m_spellInfo->EffectImplicitTargetA[eff_idx] == TARGET_SINGLE_FRIEND &&
+        m_spellInfo->EffectImplicitTargetB[eff_idx] == TARGET_NONE)
+        m_spellAuraHolder->SetAffectiveCasterGuid(m_originalCasterGUID);
 }
 
 void Spell::EffectSummonType(SpellEffectIndex eff_idx)
@@ -6051,12 +6060,12 @@ void Spell::DoSummonGroupPets(SpellEffectIndex eff_idx)
         m_duration = 0;
     }
 
-    uint32 amount = damage;
+    int32 amount = m_spellInfo->EffectRealPointsPerLevel[eff_idx] ? m_spellInfo->EffectRealPointsPerLevel[eff_idx] : m_currentBasePoints[eff_idx];
+
+    if (amount < 0)
+        amount = 1;
 
     uint32 originalSpellID = (m_IsTriggeredSpell && m_triggeredBySpellInfo) ? m_triggeredBySpellInfo->Id : m_spellInfo->Id;
-
-    if (amount > 5)
-        amount = 1;  // Don't find any cast, summons over 3 pet.
 
     CreatureCreatePos pos (m_caster->GetMap(), m_targets.m_destX, m_targets.m_destY, m_targets.m_destZ, -m_caster->GetOrientation(), m_caster->GetPhaseMask());
 
@@ -6470,7 +6479,9 @@ void Spell::DoSummonWild(SpellEffectIndex eff_idx, uint32 forceFaction)
     float radius = GetSpellRadius(sSpellRadiusStore.LookupEntry(m_spellInfo->EffectRadiusIndex[eff_idx]));
     TempSummonType summonType = (m_duration == 0) ? TEMPSUMMON_DEAD_DESPAWN : TEMPSUMMON_TIMED_OR_DEAD_DESPAWN;
 
-    int32 amount = damage > 0 ? damage : 1;
+    int32 amount = m_spellInfo->EffectRealPointsPerLevel[eff_idx] ? m_spellInfo->EffectRealPointsPerLevel[eff_idx] : m_currentBasePoints[eff_idx];
+    if (amount < 0)
+        amount = 1;
 
     for(int32 count = 0; count < amount; ++count)
     {
@@ -6568,8 +6579,12 @@ void Spell::DoSummonGuardian(SpellEffectIndex eff_idx, uint32 forceFaction)
         if (Pet* old_protector = m_caster->GetProtectorPet())
             old_protector->Unsummon(PET_SAVE_AS_DELETED, m_caster);
 
-    // in another case summon new
-    uint32 level = m_caster->getLevel();
+    int32 amount = m_spellInfo->EffectRealPointsPerLevel[eff_idx] ? m_spellInfo->EffectRealPointsPerLevel[eff_idx] : m_currentBasePoints[eff_idx];
+    if (amount < 0)
+        amount = 1;
+
+    //uint32 level  = m_caster->getLevel();
+    uint32 level  = m_spellInfo->EffectRealPointsPerLevel[eff_idx] ? (damage < m_caster->getLevel() ? damage : m_caster->getLevel()) : m_caster->getLevel();
 
     // level of pet summoned using engineering item based at engineering skill level
     if (m_caster->GetTypeId() == TYPEID_PLAYER && m_CastItem)
@@ -6599,9 +6614,6 @@ void Spell::DoSummonGuardian(SpellEffectIndex eff_idx, uint32 forceFaction)
     float radius = GetSpellRadius(sSpellRadiusStore.LookupEntry(m_spellInfo->EffectRadiusIndex[eff_idx]));
 
     uint32 originalSpellID = (m_IsTriggeredSpell && m_triggeredBySpellInfo) ? m_triggeredBySpellInfo->Id : m_spellInfo->Id;
-
-    // cannot find any guardian group over 5. need correct?
-    int32 amount = (damage > 0 && damage < 6) ? damage : 1;
 
     for (int32 count = 0; count < amount; ++count)
     {
@@ -6676,7 +6688,10 @@ void Spell::DoSummonVehicle(SpellEffectIndex eff_idx, uint32 forceFaction)
     if (!vehicle_entry)
         return;
 
-    SpellEntry const* m_mountspell = sSpellStore.LookupEntry(m_spellInfo->EffectBasePoints[eff_idx] != 0 ? m_spellInfo->CalculateSimpleValue(eff_idx) : 46598);
+    SpellEntry const* m_mountspell = sSpellStore.LookupEntry(
+        m_spellInfo->EffectBasePoints[eff_idx] != 0 ?
+        m_spellInfo->CalculateSimpleValue(eff_idx) :
+        SPELL_RIDE_VEHICLE_HARDCODED);
 
     if (!m_mountspell)
         m_mountspell = sSpellStore.LookupEntry(46598);
@@ -8393,7 +8408,6 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
                     }
 
                     // Teleport target to the spectral realm, add debuff and force faction
-                    unitTarget->CastSpell(unitTarget, 44852, true);
                     unitTarget->CastSpell(unitTarget, 46019, true);
                     unitTarget->CastSpell(unitTarget, 46021, true);
                     return;
@@ -9373,7 +9387,11 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
 
                     // learn random explicit discovery recipe (if any)
                     if (uint32 discoveredSpell = sSpellMgr.GetExplicitDiscoverySpell(m_spellInfo->Id, (Player*)m_caster))
+                    {
                         ((Player*)m_caster)->learnSpell(discoveredSpell, false);
+                        ((Player*)m_caster)->UpdateCraftSkill(m_spellInfo->Id);
+                    }
+
                     return;
                 }
                 case 60123: // Lightwell
@@ -9428,6 +9446,11 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
                     else
                         m_caster->CastSpell(m_caster, 62239, true);
                     return;
+                }
+                case 61263:                                 //Intravenous Healing Potion
+                {
+                    m_caster->CastSpell(unitTarget, 61828, true);
+                    break;
                 }
                 case 62536:                                 // Frog Kiss (quest Blade fit for a champion)
                 {
@@ -9557,6 +9580,31 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
                         return;
 
                     unitTarget->RemoveAurasDueToSpell(m_spellInfo->EffectBasePoints[eff_idx]);
+                    return;
+                }
+                case 62003:                                 // Algalon - Black Hole Spawn
+                {
+                    if (!unitTarget)
+                        return;
+
+                    // Apply aura which causes black hole phase/1 sec to hostile targets
+                    unitTarget->CastSpell(m_caster, 62185, true);
+                }
+                case 62168:									// Algalon - Black Hole Damage
+                {
+                    if (!unitTarget)
+                        return;
+                    unitTarget->CastSpell(unitTarget, 62169, true);
+                    return;
+                }
+                case 64122:
+                case 65108:                                 // Algalon - Collapsing start explosion to summon black hole
+                {
+                    if (!unitTarget)
+                        return;
+                    
+                    // Cast Black hole spawn
+                    m_caster->CastSpell(m_caster, 62189, true);
                     return;
                 }
                 case 65044:                                 // Flames Ulduar
@@ -11388,20 +11436,21 @@ void Spell::EffectSkinning(SpellEffectIndex /*eff_idx*/)
 
 void Spell::EffectCharge(SpellEffectIndex /*eff_idx*/)
 {
-    if (!unitTarget)
+    if (!unitTarget || !m_caster)
         return;
 
     float x, y, z;
     unitTarget->GetContactPoint(m_caster, x, y, z);
 
     // Try to normalize Z coord cuz GetContactPoint do nothing with Z axis
-    unitTarget->UpdateGroundPositionZ(x, y, z);
+    m_caster->UpdateAllowedPositionZ(x, y, z);
 
     if (unitTarget->GetTypeId() != TYPEID_PLAYER)
-        ((Creature *)unitTarget)->StopMoving();
+        ((Creature*)unitTarget)->StopMoving();
 
-    // Only send MOVEMENTFLAG_WALK_MODE, client has strange issues with other move flags
-    m_caster->MonsterMoveWithSpeed(x, y, z, 24.f);
+    float speed = m_spellInfo->speed ? m_spellInfo->speed : BASE_CHARGE_SPEED;
+
+    m_caster->MonsterMoveWithSpeed(x, y, z, speed, true, true);
 
     // not all charge effects used in negative spells
     if (unitTarget != m_caster && !IsPositiveSpell(m_spellInfo->Id))
@@ -11430,10 +11479,12 @@ void Spell::EffectCharge2(SpellEffectIndex /*eff_idx*/)
         return;
 
     // Try to normalize Z coord cuz GetContactPoint do nothing with Z axis
-    unitTarget->UpdateGroundPositionZ(x, y, z);
+    m_caster->UpdateAllowedPositionZ(x, y, z);
+
+    float speed = m_spellInfo->speed ? m_spellInfo->speed : BASE_CHARGE_SPEED;
 
     // Only send MOVEMENTFLAG_WALK_MODE, client has strange issues with other move flags
-    m_caster->MonsterMoveWithSpeed(x, y, z, 24.f);
+    m_caster->MonsterMoveWithSpeed(x, y, z, speed, true, true);
 
     // not all charge effects used in negative spells
     if (unitTarget && unitTarget != m_caster && !IsPositiveSpell(m_spellInfo->Id))
@@ -12487,10 +12538,23 @@ void Spell::EffectSuspendGravity(SpellEffectIndex eff_idx)
     if (!unitTarget)
         return;
 
-    float fTargetX, fTargetY, fTargetZ;
-    unitTarget->GetPosition(fTargetX, fTargetY, fTargetZ);
-    float mapZ = unitTarget->GetTerrain()->GetHeight(fTargetX, fTargetY, fTargetZ);
-    float radius = m_spellInfo->EffectMiscValue[eff_idx]/10;
-    if (fTargetZ < mapZ + 0.5)
-        unitTarget->KnockBackFrom(m_caster, -radius, radius);
+    float x,y,z;
+
+    if (m_targets.m_targetMask & TARGET_FLAG_DEST_LOCATION)
+    {
+        x = m_targets.m_destX;
+        y = m_targets.m_destY;
+        z = m_targets.m_destZ;
+    }
+    else
+    {
+        m_caster->GetClosePoint(x, y, z, m_caster->GetObjectBoundingRadius(), 0.0f, m_caster->GetAngle(unitTarget));
+    }
+
+    unitTarget->UpdateAllowedPositionZ(x, y, z);
+
+    float speed  = float(m_spellInfo->EffectMiscValue[eff_idx]/2.0f);
+    float height = float(unitTarget->GetDistance(x,y,z) / 10.0f);
+
+    unitTarget->MonsterMoveJump(x, y, z + 0.1f, unitTarget->GetOrientation(), speed, height, true, m_caster == unitTarget ? NULL : m_caster);
 }

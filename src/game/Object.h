@@ -362,7 +362,6 @@ class MANGOS_DLL_SPEC Object
         virtual bool HasInvolvedQuest(uint32 /* quest_id */) const { return false; }
 
     protected:
-
         Object ( );
 
         void _InitValues();
@@ -400,10 +399,13 @@ class MANGOS_DLL_SPEC Object
 
         PackedGuid m_PackGUID;
 
-        // for output helpfull error messages from ASSERTs
-        bool PrintIndexError(uint32 index, bool set) const;
         Object(const Object&);                              // prevent generation copy constructor
         Object& operator=(Object const&);                   // prevent generation assigment operator
+
+    public:
+        // for output helpfull error messages from ASSERTs
+        bool PrintIndexError(uint32 index, bool set) const;
+        bool PrintEntryError(char const* descr) const;
 };
 
 struct WorldObjectChangeAccumulator;
@@ -517,8 +519,8 @@ class MANGOS_DLL_SPEC WorldObject : public Object
         {
             return obj && IsInMap(obj) && _IsWithinDist(obj,dist2compare,is3D);
         }
-        bool IsWithinLOS(float x, float y, float z) const;
-        bool IsWithinLOSInMap(const WorldObject* obj) const;
+        bool IsWithinLOS(float x, float y, float z, bool strict = true) const;
+        bool IsWithinLOSInMap(const WorldObject* obj, bool strict = true) const;
         bool GetDistanceOrder(WorldObject const* obj1, WorldObject const* obj2, bool is3D = true) const;
         bool IsInRange(WorldObject const* obj, float minRange, float maxRange, bool is3D = true) const;
         bool IsInRange2d(float x, float y, float minRange, float maxRange) const;

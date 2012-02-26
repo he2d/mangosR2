@@ -1175,6 +1175,9 @@ void GameObject::Use(Unit* user)
     if (!user)
         return;
 
+    // user must be provided
+    MANGOS_ASSERT(user || PrintEntryError("GameObject::Use (without user)"));
+
     // by default spell caster is user
     Unit* spellCaster = user;
     uint32 spellId = 0;
@@ -1772,12 +1775,9 @@ void GameObject::Use(Unit* user)
                     switch(info->id)
                     {
                         case 179785:                        // Silverwing Flag
-                            // check if it's correct bg
-                            if (bg->GetTypeID(true) == BATTLEGROUND_WS)
-                                bg->EventPlayerClickedOnFlag(player, this);
-                            break;
                         case 179786:                        // Warsong Flag
-                            if (bg->GetTypeID(true) == BATTLEGROUND_WS)
+                            // check if it's correct bg
+                            if (bg->GetTypeID() == BATTLEGROUND_WS)
                                 bg->EventPlayerClickedOnFlag(player, this);
                             break;
                         case 184142:                        // Netherstorm Flag
@@ -2415,7 +2415,7 @@ bool GameObject::IsWildSummoned() const
     return false;
 }
 
-float GameObject::GetDeterminativeSize() const
+float GameObject::GetDeterminativeSize(bool b_priorityZ) const
 {
     if (!IsInWorld())
         return 0.0f;
@@ -2427,7 +2427,6 @@ float GameObject::GetDeterminativeSize() const
     float dx = info->maxX - info->minX;
     float dy = info->maxY - info->minY;
     float dz = info->maxZ - info->minZ;
-    float _size = sqrt(dx*dx + dy*dy +dz*dz);
 
-    return _size;
+    return b_priorityZ ? dz : sqrt(dx*dx + dy*dy +dz*dz);
 }

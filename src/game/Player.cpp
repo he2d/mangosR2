@@ -408,7 +408,7 @@ Player::Player (WorldSession *session): Unit(), m_mover(this), m_camera(this), m
     m_usedTalentCount = 0;
     m_questRewardTalentCount = 0;
 
-    m_regenTimer = 0;
+    m_regenTimer = REGEN_TIME_FULL;
     m_weaponChangeTimer = 0;
 
     m_zoneUpdateId = 0;
@@ -1358,7 +1358,7 @@ void Player::Update( uint32 update_diff, uint32 p_time )
             SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_REGENERATE_POWER);
 
         if (!m_regenTimer)
-            RegenerateAll();
+            RegenerateAll(IsUnderLastManaUseEffect() ? REGEN_TIME_PRECISE : REGEN_TIME_FULL);
     }
 
     if (!isAlive() && !HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST) && getDeathState() != GHOULED )
@@ -1505,6 +1505,12 @@ void Player::SetDeathState(DeathState s)
     // restore resurrection spell id for player after aura remove
     if (s == JUST_DIED && cur && ressSpellId)
         SetUInt32Value(PLAYER_SELF_RES_SPELL, ressSpellId);
+
+    if (!cur && s == ALIVE)
+    {
+        _RemoveAllItemMods();
+        _ApplyAllItemMods();
+    }
 
     if (isAlive() && !cur)
     {
@@ -1756,6 +1762,9 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
         return false;
 
     // client without expansion support
+
+    if (Group* grp = GetGroup())
+        grp->SetPlayerMap(GetObjectGuid(), mapid);
 
     // if we were on a transport, leave
     if (!(options & TELE_TO_NOT_LEAVE_TRANSPORT) && m_transport)
@@ -2104,7 +2113,7 @@ void Player::RegenerateAll(uint32 diff)
     if (getClass() == CLASS_DEATH_KNIGHT)
         Regenerate(POWER_RUNE, diff);
 
-    m_regenTimer = REGEN_TIME_FULL;
+    m_regenTimer = IsUnderLastManaUseEffect() ? REGEN_TIME_PRECISE : REGEN_TIME_FULL;
 }
 
 // diff contains the time in milliseconds since last regen.
@@ -2121,33 +2130,35 @@ void Player::Regenerate(Powers power, uint32 diff)
         {
             if (HasAuraType(SPELL_AURA_STOP_NATURAL_MANA_REGEN))
                 break;
-            bool recentCast = IsUnderLastManaUseEffect();
+
             float ManaIncreaseRate = sWorld.getConfig(CONFIG_FLOAT_RATE_POWER_MANA);
-            if (recentCast)
+            if (IsUnderLastManaUseEffect())
             {
                 // Mangos Updates Mana in intervals of 2s, which is correct
-                addvalue = GetFloatValue(UNIT_FIELD_POWER_REGEN_INTERRUPTED_FLAT_MODIFIER) *  ManaIncreaseRate * 2.00f;
+                addvalue += GetFloatValue(UNIT_FIELD_POWER_REGEN_INTERRUPTED_FLAT_MODIFIER) *  ManaIncreaseRate * (float)REGEN_TIME_FULL/IN_MILLISECONDS;
             }
             else
             {
-                addvalue = GetFloatValue(UNIT_FIELD_POWER_REGEN_FLAT_MODIFIER) * ManaIncreaseRate * 2.00f;
+                addvalue += GetFloatValue(UNIT_FIELD_POWER_REGEN_FLAT_MODIFIER) * ManaIncreaseRate * (float)REGEN_TIME_FULL/IN_MILLISECONDS;
             }
-        }   break;
+            break;
+        }
         case POWER_RAGE:                                    // Regenerate rage
         {
             float RageDecreaseRate = sWorld.getConfig(CONFIG_FLOAT_RATE_POWER_RAGE_LOSS);
-            addvalue = 20 * RageDecreaseRate;               // 2 rage by tick (= 2 seconds => 1 rage/sec)
-        }   break;
+            addvalue += 20 * RageDecreaseRate;               // 2 rage by tick (= 2 seconds => 1 rage/sec)
+            break;
+        }
         case POWER_ENERGY:                                  // Regenerate energy (rogue)
         {
             float EnergyRate = sWorld.getConfig(CONFIG_FLOAT_RATE_POWER_ENERGY);
-            addvalue = 20 * EnergyRate;
+            addvalue += 20 * EnergyRate;
             break;
         }
         case POWER_RUNIC_POWER:
         {
             float RunicPowerDecreaseRate = sWorld.getConfig(CONFIG_FLOAT_RATE_POWER_RUNICPOWER_LOSS);
-            addvalue = 30 * RunicPowerDecreaseRate;         // 3 RunicPower by tick
+            addvalue += 30 * RunicPowerDecreaseRate;         // 3 RunicPower by tick
             break;
         }
         case POWER_RUNE:
@@ -2184,7 +2195,8 @@ void Player::Regenerate(Powers power, uint32 diff)
                     SetNeedConvertRune(rune, false);
                 }
             }
-        }   break;
+            break;
+        }
         case POWER_FOCUS:
         case POWER_HAPPINESS:
         case POWER_HEALTH:
@@ -2203,20 +2215,20 @@ void Player::Regenerate(Powers power, uint32 diff)
     }
 
     // addvalue computed on a 2sec basis. => update to diff time
-    addvalue *= float(diff) / REGEN_TIME_FULL;
+    uint32 _addvalue = ceil(fabs(addvalue * float(diff) / (float)REGEN_TIME_FULL));
 
     if (power != POWER_RAGE && power != POWER_RUNIC_POWER)
     {
-        curValue += uint32(addvalue);
+        curValue += _addvalue;
         if (curValue > maxValue)
             curValue = maxValue;
     }
     else
     {
-        if (curValue <= uint32(addvalue))
+        if (curValue <= _addvalue)
             curValue = 0;
         else
-            curValue -= uint32(addvalue);
+            curValue -= _addvalue;
     }
     SetPower(power, curValue);
 }
@@ -6411,7 +6423,7 @@ void Player::CheckAreaExploreAndOutdoor()
     if (!isAlive())
         return;
 
-    if (IsTaxiFlying())
+    if (IsTaxiFlying() || !GetMap())
         return;
 
     bool isOutdoor;
@@ -6632,11 +6644,11 @@ void Player::RewardReputation(Unit *pVictim, float rate)
         }
     }
 
-    if (Rep->repfaction1 && (!Rep->team_dependent || GetTeam()==ALLIANCE))
+    if (Repfaction1 && (!Rep->team_dependent || GetTeam()==ALLIANCE))
     {
         int32 donerep1 = CalculateReputationGain(REPUTATION_SOURCE_KILL, Rep->repvalue1, Repfaction1, pVictim->getLevel());
         donerep1 = int32(donerep1*rate);
-        FactionEntry const *factionEntry1 = sFactionStore.LookupEntry(Rep->repfaction1);
+        FactionEntry const *factionEntry1 = sFactionStore.LookupEntry(Repfaction1);
         uint32 current_reputation_rank1 = GetReputationMgr().GetRank(factionEntry1);
         if (factionEntry1 && current_reputation_rank1 <= Rep->reputation_max_cap1)
             GetReputationMgr().ModifyReputation(factionEntry1, donerep1);
@@ -6650,11 +6662,11 @@ void Player::RewardReputation(Unit *pVictim, float rate)
         }
     }
 
-    if (Rep->repfaction2 && (!Rep->team_dependent || GetTeam()==HORDE))
+    if (Repfaction2 && (!Rep->team_dependent || GetTeam()==HORDE))
     {
         int32 donerep2 = CalculateReputationGain(REPUTATION_SOURCE_KILL, Rep->repvalue2, Repfaction2, pVictim->getLevel());
         donerep2 = int32(donerep2*rate);
-        FactionEntry const *factionEntry2 = sFactionStore.LookupEntry(Rep->repfaction2);
+        FactionEntry const *factionEntry2 = sFactionStore.LookupEntry(Repfaction2);
         uint32 current_reputation_rank2 = GetReputationMgr().GetRank(factionEntry2);
         if (factionEntry2 && current_reputation_rank2 <= Rep->reputation_max_cap2)
             GetReputationMgr().ModifyReputation(factionEntry2, donerep2);
@@ -8520,8 +8532,8 @@ void Player::SendLoot(ObjectGuid guid, LootType loot_type)
 
                 go->SetLootState(GO_ACTIVATED);
             }
-            if (go->getLootState() == GO_ACTIVATED && 
-            go->GetGoType() == GAMEOBJECT_TYPE_CHEST && 
+            if (go->getLootState() == GO_ACTIVATED &&
+            go->GetGoType() == GAMEOBJECT_TYPE_CHEST &&
             (go->GetGOInfo()->chest.groupLootRules || sWorld.getConfig(CONFIG_BOOL_LOOT_CHESTS_IGNORE_DB)))
             {
                 if (Group* group = go->GetGroupLootRecipient())
@@ -10195,7 +10207,7 @@ bool Player::HasItemOrGemWithIdEquipped( uint32 item, uint32 count, uint8 except
                 continue;
 
             Item *pItem = GetItemByPos( INVENTORY_SLOT_BAG_0, i );
-            if ( pItem && pItem->GetProto()->Socket[0].Color)
+            if (pItem && (pItem->GetProto()->Socket[0].Color || pItem->GetEnchantmentId(PRISMATIC_ENCHANTMENT_SLOT)))
             {
                 tempcount += pItem->GetGemCountWithID(item);
                 if ( tempcount >= count )
@@ -14736,20 +14748,33 @@ void Player::RewardQuest(Quest const *pQuest, uint32 reward, Object* questGiver,
 {
     uint32 quest_id = pQuest->GetQuestId();
 
-    for (int i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; ++i )
+    // Destroy quest items
+    uint32 srcItemId = pQuest->GetSrcItemId();
+    uint32 srcItemCount = 0;
+
+    if (srcItemId)
     {
-        if (pQuest->ReqItemId[i])
-            DestroyItemCount(pQuest->ReqItemId[i], pQuest->ReqItemCount[i], true);
+        srcItemCount = pQuest->GetSrcItemCount();
+        if (!srcItemCount)
+            srcItemCount = 1;
+
+        DestroyItemCount(srcItemId, srcItemCount, true, true);
     }
 
-    // Destroy quest item
-    uint32 srcitem = pQuest->GetSrcItemId();
-    if (srcitem > 0)
+    // Destroy requered items
+    for (uint32 i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; ++i)
     {
-        uint32 count = pQuest->GetSrcItemCount();
-        if (count <= 0)
-            count = 1;
-        DestroyItemCount(srcitem, count, true, true);
+        uint32 reqItemId = pQuest->ReqItemId[i];
+        uint32 reqItemCount = pQuest->ReqItemCount[i];
+
+        if (reqItemId)
+        {
+            if (reqItemId == srcItemId)
+                reqItemCount -= srcItemCount;
+
+            if (reqItemCount)
+                DestroyItemCount(reqItemId, reqItemCount, true);
+        }
     }
 
     RemoveTimedQuest(quest_id);
@@ -16370,7 +16395,7 @@ bool Player::LoadFromDB(ObjectGuid guid, SqlQueryHolder *holder )
         GetSession()->Expansion() < mapEntry->Expansion())
     {
         sLog.outError("Player::LoadFromDB player %s have invalid coordinates (map: %u X: %f Y: %f Z: %f O: %f). Teleport to default race/class locations.",
-            guid.GetString().c_str(), 
+            guid.GetString().c_str(),
             savedLocation.mapid,
             savedLocation.coord_x,
             savedLocation.coord_y,
@@ -17939,6 +17964,7 @@ InstancePlayerBind* Player::GetBoundInstance(uint32 mapid, Difficulty difficulty
     if(!mapDiff)
         return NULL;
 
+    MAPLOCK_READ(this, MAP_LOCK_TYPE_DEFAULT);
     BoundInstancesMap::iterator itr = m_boundInstances[difficulty].find(mapid);
     if (itr != m_boundInstances[difficulty].end())
         return &itr->second;
@@ -17948,6 +17974,7 @@ InstancePlayerBind* Player::GetBoundInstance(uint32 mapid, Difficulty difficulty
 
 void Player::UnbindInstance(uint32 mapid, Difficulty difficulty, bool unload)
 {
+    MAPLOCK_WRITE(this, MAP_LOCK_TYPE_DEFAULT);
     BoundInstancesMap::iterator itr = m_boundInstances[difficulty].find(mapid);
     UnbindInstance(itr, difficulty, unload);
 }
@@ -17968,6 +17995,7 @@ InstancePlayerBind* Player::BindToInstance(DungeonPersistentState *state, bool p
 {
     if (state)
     {
+        MAPLOCK_READ(this, MAP_LOCK_TYPE_DEFAULT);
         InstancePlayerBind& bind = m_boundInstances[state->GetDifficulty()][state->GetMapId()];
         if (bind.state)
         {
@@ -19505,7 +19533,7 @@ void Player::PetSpellInitialize()
     data << pet->GetObjectGuid();
     data << uint16(pet->GetCreatureInfo()->family);         // creature family (required for pet talents)
     data << uint32(0);
-    data << uint8(charmInfo->GetReactState()) << uint8(charmInfo->GetCommandState()) << uint16(0);
+    data << uint32(charmInfo->GetState());
 
     // action bar loop
     charmInfo->BuildActionBar(&data);
@@ -19591,7 +19619,7 @@ void Player::PossessSpellInitialize()
     data << charm->GetObjectGuid();
     data << uint16(charm->GetObjectGuid().IsAnyTypeCreature() ? ((Creature*)charm)->GetCreatureInfo()->family : 0);
     data << uint32(0);
-    data << uint32(0);
+    data << uint32(charmInfo->GetState());
 
     charmInfo->BuildActionBar(&data);
 
@@ -19622,7 +19650,7 @@ void Player::VehicleSpellInitialize()
     data << charm->GetObjectGuid();
     data << uint16(((Creature*)charm)->GetCreatureInfo()->family);
     data << uint32(0);
-    data << uint32(0x08000101);                             // react state
+    data << uint32(charmInfo->GetState());
 
     charmInfo->BuildActionBar(&data);
 
@@ -19688,11 +19716,7 @@ void Player::CharmSpellInitialize()
     data << charm->GetObjectGuid();
     data << uint16(charm->GetObjectGuid().IsAnyTypeCreature() ? ((Creature*)charm)->GetCreatureInfo()->family : 0);
     data << uint32(0);
-
-    if (charm->GetTypeId() != TYPEID_PLAYER)
-        data << uint8(charmInfo->GetReactState()) << uint8(charmInfo->GetCommandState()) << uint16(0);
-    else
-        data << uint8(0) << uint8(0) << uint16(0);
+    data << uint32(charmInfo->GetState());
 
     charmInfo->BuildActionBar(&data);
 
@@ -24199,6 +24223,11 @@ void Player::SendDuelCountdown(uint32 counter)
     GetSession()->SendPacket(&data);
 }
 
+bool Player::IsImmuneToSpell(SpellEntry const* spellInfo) const
+{
+    return Unit::IsImmuneToSpell(spellInfo);
+}
+
 bool Player::IsImmuneToSpellEffect(SpellEntry const* spellInfo, SpellEffectIndex index) const
 {
     switch(spellInfo->Effect[index])
@@ -24621,7 +24650,10 @@ bool Player::CheckTransferPossibility(uint32 mapId)
 
     MapEntry const* targetMapEntry = sMapStore.LookupEntry(mapId);
     if (!targetMapEntry)
+    {
+        sLog.outError("Player::CheckTransferPossibility: player %s try teleport to map %u, but map not exists!", GetObjectGuid().GetString().c_str(), mapId);
         return false;
+    }
 
     // Battleground requirements checked in another place
     if(InBattleGround() && targetMapEntry->IsBattleGroundOrArena())
@@ -24630,14 +24662,22 @@ bool Player::CheckTransferPossibility(uint32 mapId)
     AreaTrigger const* at = sObjectMgr.GetMapEntranceTrigger(mapId);
     if (!at)
     {
-        if (targetMapEntry->IsContinent())
+        if (isGameMaster())
         {
-            if (isGameMaster())
-                return true;
-            if (GetSession()->Expansion() < targetMapEntry->Expansion())
-                return false;
+            sLog.outDetail("Player::CheckTransferPossibility: gamemaster %s try teleport to map %u, but entrance trigger not exists (possible for some test maps).", GetObjectGuid().GetString().c_str(), mapId);
             return true;
         }
+
+        if (targetMapEntry->IsContinent())
+        {
+            if (GetSession()->Expansion() < targetMapEntry->Expansion())
+            {
+                sLog.outError("Player::CheckTransferPossibility: player %s try teleport to map %u, but not has sufficient expansion (%u instead of %u)", GetObjectGuid().GetString().c_str(), mapId, GetSession()->Expansion(), targetMapEntry->Expansion());
+                return false;
+            }
+            return true;
+        }
+        sLog.outError("Player::CheckTransferPossibility: player %s try teleport to map %u, but entrance trigger not exists!", GetObjectGuid().GetString().c_str(), mapId);
         return false;
     }
 
