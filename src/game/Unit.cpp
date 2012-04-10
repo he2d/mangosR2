@@ -2628,7 +2628,7 @@ void Unit::CalculateDamageAbsorbAndResist(Unit *pCaster, SpellSchoolMask schoolM
 
             DamageInfo damageInfo = DamageInfo(pCaster, caster, (*i)->GetSpellProto());
             damageInfo.CleanDamage(0, 0, BASE_ATTACK, MELEE_HIT_NORMAL);
-            damageInfo.damageType = DIRECT_DAMAGE;
+            damageInfo.damageType = damagetype;
 
             if (RemainingDamage >= (*i)->GetModifier()->m_amount)
                 damageInfo.damage = (*i)->GetModifier()->m_amount;
@@ -2660,7 +2660,7 @@ void Unit::CalculateDamageAbsorbAndResist(Unit *pCaster, SpellSchoolMask schoolM
 
             DamageInfo damageInfo = DamageInfo(pCaster, caster, (*i)->GetSpellProto());
             damageInfo.CleanDamage(0, 0, BASE_ATTACK, MELEE_HIT_NORMAL);
-            damageInfo.damageType = DIRECT_DAMAGE;
+            damageInfo.damageType = damagetype;
 
             damageInfo.damage = uint32(RemainingDamage * (*i)->GetModifier()->m_amount / 100.0f);
 
@@ -5699,6 +5699,20 @@ Aura* Unit::GetAura(AuraType type, SpellFamily family, ClassFamilyMask const& cl
     return NULL;
 }
 
+Aura* Unit::GetAuraByEffectMask(AuraType type, SpellFamily family, ClassFamilyMask const& classMask, ObjectGuid casterGuid)
+{
+    AuraList const& auras = GetAurasByType(type);
+    for (AuraList::const_iterator i = auras.begin();i != auras.end(); ++i)
+    {
+        if ((*i)->GetAuraSpellClassMask() == classMask &&
+            (family <= SPELLFAMILY_PET &&  (*i)->GetSpellProto()->SpellFamilyName == family) &&
+            (!casterGuid || (*i)->GetCasterGuid() == casterGuid))
+            return *i;
+    }
+
+    return NULL;
+}
+
 Aura* Unit::GetTriggeredByClientAura(uint32 spellId)
 {
     if (spellId)
@@ -7509,17 +7523,21 @@ uint32 Unit::SpellDamageBonusDone(Unit *pVictim, SpellEntry const *spellProto, u
                 }
             }
             // Torment the weak affected (Arcane Barrage, Arcane Blast, Frostfire Bolt, Arcane Missiles, Fireball, Pyroblast)
-            if (spellProto->SpellFamilyFlags.test<CF_MAGE_FIREBALL, CF_MAGE_FROSTBOLT, CF_MAGE_ARCANE_MISSILES2, CF_MAGE_ARCANE_BLAST, CF_MAGE_FROSTFIRE_BOLT, CF_MAGE_ARCANE_BARRAGE>() &&
-                (pVictim->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED) || pVictim->HasAuraType(SPELL_AURA_HASTE_ALL)))
+            if (spellProto->SpellFamilyFlags.test<CF_MAGE_FIREBALL, CF_MAGE_FROSTBOLT, CF_MAGE_ARCANE_MISSILES2, CF_MAGE_ARCANE_BLAST, CF_MAGE_FROSTFIRE_BOLT, CF_MAGE_ARCANE_BARRAGE>())
             {
                 //Search for Torment the weak dummy aura
-                Unit::AuraList const& ttw = GetAurasByType(SPELL_AURA_DUMMY);
-                for(Unit::AuraList::const_iterator i = ttw.begin(); i != ttw.end(); ++i)
+                if (Aura* ttwAura = GetAuraByEffectMask(SPELL_AURA_DUMMY,SPELLFAMILY_GENERIC,ClassFamilyMask(0x00240000,0,0),GetObjectGuid()))
                 {
-                    if ((*i)->GetSpellProto()->SpellIconID == 3263)
+                    Unit::SpellAuraHolderMap const& holderMap = pVictim->GetSpellAuraHolderMap();
+                    for (Unit::SpellAuraHolderMap::const_iterator itr = holderMap.begin(); itr != holderMap.end(); ++itr)
                     {
-                        DoneTotalMod *= ((*i)->GetModifier()->m_amount+100.0f) / 100.0f;
-                        break;
+                        if (itr->second && 
+                            !itr->second->IsDeleted() && 
+                            itr->second->HasMechanic(ttwAura->GetModifier()->m_miscvalue))
+                        {
+                            DoneTotalMod *= ((float)ttwAura->GetModifier()->m_amount + 100.0f) / 100.0f;
+                            break;
+                        }
                     }
                 }
             }
@@ -12343,7 +12361,11 @@ void Unit::RemoveAurasAtMechanicImmunity(uint32 mechMask, uint32 exceptSpellId, 
 
                 for (int32 i = 0; i < MAX_EFFECT_INDEX; i++)
                 {
-                    if ((1 << (iter->second->GetSpellProto()->EffectMechanic[SpellEffectIndex(i)] - 1)) & mechMask)
+                    uint8 mechanic  = iter->second->GetSpellProto()->EffectMechanic[SpellEffectIndex(i)] ?
+                                      iter->second->GetSpellProto()->EffectMechanic[SpellEffectIndex(i)] :
+                                      iter->second->GetSpellProto()->Mechanic;
+
+                    if ((1 << (mechanic - 1)) & mechMask)
                     {
                         Aura* aura = iter->second->GetAuraByEffectIndex(SpellEffectIndex(i));
                         if (aura && !aura->IsDeleted())
@@ -12521,12 +12543,6 @@ void Unit::EnterVehicle(Unit* vehicleBase, int8 seatId)
     InterruptNonMeleeSpells(false);
     RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
 
-    if (GetTypeId() == TYPEID_PLAYER)
-        ((Player*)this)->UnsummonPetTemporaryIfAny(true);
-    else
-        if (Pet *pet = GetPet())
-            pet->Unsummon(PET_SAVE_AS_CURRENT,this);
-
     SpellEntry const* spellInfo = NULL;
     int32 bp[MAX_EFFECT_INDEX];
     Unit* caster = NULL;
@@ -12615,9 +12631,6 @@ void Unit::ExitVehicle()
         _ExitVehicle();
         sLog.outDetail("Unit::ExitVehicle: unit %s leave vehicle %s but no control aura!", GetObjectGuid().GetString().c_str(), vehicleBase->GetObjectGuid().GetString().c_str());
     }
-
-    if (isAlive() && GetTypeId() == TYPEID_PLAYER)
-        ((Player*)this)->ResummonPetTemporaryUnSummonedIfAny();
 }
 
 void Unit::ChangeSeat(int8 seatId, bool next)
@@ -12659,6 +12672,16 @@ void Unit::_EnterVehicle(VehicleKit* vehicle, int8 seatId)
         else
             ExitVehicle();
     }
+    else
+    {
+        if (Pet* pet = GetPet())
+        {
+            if (GetTypeId() == TYPEID_PLAYER)
+                ((Player*)this)->UnsummonPetTemporaryIfAny(true);
+            else
+                pet->Unsummon(PET_SAVE_AS_CURRENT,this);
+        }
+    }
 
     if (!vehicle->AddPassenger(this, seatId))
         return;
@@ -12697,6 +12720,9 @@ void Unit::_ExitVehicle()
     GetVehicle()->RemovePassenger(this, true);
 
     m_pVehicle = NULL;
+
+    if (isAlive() && GetTypeId() == TYPEID_PLAYER)
+        ((Player*)this)->ResummonPetTemporaryUnSummonedIfAny();
 }
 
 void Unit::SetPvP( bool state )
@@ -12760,7 +12786,7 @@ void Unit::KnockBackPlayerWithAngle(float angle, float horizontalSpeed, float ve
     // Effect propertly implemented only for players
     if (GetTypeId()==TYPEID_PLAYER)
     {
-        ((Player*)this)->GetAntiCheat()->SetImmune(2 * verticalSpeed / Movement::gravity);
+        ((Player*)this)->GetAntiCheat()->SetImmune(uint32((3 * verticalSpeed / Movement::gravity) * 1000));
         WorldPacket data(SMSG_MOVE_KNOCK_BACK, 9+4+4+4+4+4);
         data << GetPackGUID();
         data << uint32(0);                                  // Sequence
