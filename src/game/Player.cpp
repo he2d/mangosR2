@@ -967,28 +967,42 @@ uint32 Player::EnvironmentalDamage(EnviromentalDamage type, uint32 damage)
     // Absorb, resist some environmental damage type
     uint32 absorb = 0;
     uint32 resist = 0;
-    if (type == DAMAGE_LAVA)
-        CalculateDamageAbsorbAndResist(this, SPELL_SCHOOL_MASK_FIRE, DIRECT_DAMAGE, damage, &absorb, &resist);
-    else if (type == DAMAGE_SLIME)
-        CalculateDamageAbsorbAndResist(this, SPELL_SCHOOL_MASK_NATURE, DIRECT_DAMAGE, damage, &absorb, &resist);
 
-    damage-=absorb+resist;
+    //16455 lava, 16456 slime
+    uint32 spellID = 0;
+    switch (type)
+    {
+        case DAMAGE_LAVA:
+            spellID = 16455;
+            break;
+        case DAMAGE_SLIME:
+            spellID = 16456;
+            //as i think, not used NATURE mask for slime damage.
+            break;
+        default:
+            break;
+    }
+    DamageInfo damageInfo = DamageInfo(this,this,spellID);
+    damageInfo.damage     = damage;
+    damageInfo.damageType = SELF_DAMAGE;
+
+    CalculateDamageAbsorbAndResist(this, &damageInfo);
 
     DealDamageMods(this,damage,&absorb);
 
     WorldPacket data(SMSG_ENVIRONMENTALDAMAGELOG, (21));
     data << GetObjectGuid();
-    data << uint8(type!=DAMAGE_FALL_TO_VOID ? type : DAMAGE_FALL);
-    data << uint32(damage);
-    data << uint32(absorb);
-    data << uint32(resist);
+    data << uint8(type != DAMAGE_FALL_TO_VOID ? type : DAMAGE_FALL);
+    data << uint32(damageInfo.damage);
+    data << uint32(damageInfo.absorb);
+    data << uint32(damageInfo.resist);
     SendMessageToSet(&data, true);
 
-    uint32 final_damage = DealDamage(this, damage, NULL, SELF_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, NULL, false);
+    uint32 final_damage = DealDamage(this, &damageInfo, false);
 
     if(!isAlive())
     {
-        if (type==DAMAGE_FALL)                               // DealDamage not apply item durability loss at self damage
+        if (type == DAMAGE_FALL)                               // DealDamage not apply item durability loss at self damage
         {
             DEBUG_LOG("We are fall to death, loosing 10 percents durability");
             DurabilityLossAll(0.10f,false);
@@ -6932,6 +6946,7 @@ bool Player::RewardHonor(Unit *uVictim, uint32 groupsize, float honor)
             // and those in a lifetime
             ApplyModUInt32Value(PLAYER_FIELD_LIFETIME_HONORBALE_KILLS, 1, true);
             UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_EARN_HONORABLE_KILL);
+            UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_HONORABLE_KILL, 1);
             UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_HK_CLASS, pVictim->getClass());
             UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_HK_RACE, pVictim->getRace());
         }
@@ -11804,6 +11819,7 @@ Item* Player::StoreNewItem(ItemPosCountVec const& dest, uint32 item, bool update
         ResetCachedGearScore();
         ItemAddedQuestCheck( item, count );
         GetAchievementMgr().UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_RECEIVE_EPIC_ITEM, item, count);
+        GetAchievementMgr().UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_OWN_ITEM, item, count);
         pItem = StoreItem( dest, pItem, update );
 
         if (allowedLooters && pItem->GetProto()->GetMaxStackSize() == 1 && pItem->IsSoulBound())
@@ -11848,7 +11864,6 @@ Item* Player::StoreItem( ItemPosCountVec const& dest, Item* pItem, bool update )
 
         lastItem = _StoreItem(pos,pItem,count,true,update);
     }
-    GetAchievementMgr().UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_OWN_ITEM, entry);
     return lastItem;
 }
 
@@ -13796,6 +13811,14 @@ void Player::PrepareGossipMenu(WorldObject *pSource, uint32 menuId)
 
         if (!isGameMaster())                                // Let GM always see menu items regardless of conditions
         {
+            if (itr->second.conditionId && !sObjectMgr.IsPlayerMeetToNEWCondition(this, itr->second.conditionId))
+            {
+                if (itr->second.option_id == GOSSIP_OPTION_QUESTGIVER)
+                    canSeeQuests = false;
+                continue;
+            }
+            else if (!itr->second.conditionId)
+        {
             if (itr->second.cond_1 && !sObjectMgr.IsPlayerMeetToCondition(this, itr->second.cond_1))
             {
                 if (itr->second.option_id == GOSSIP_OPTION_QUESTGIVER)
@@ -13816,6 +13839,7 @@ void Player::PrepareGossipMenu(WorldObject *pSource, uint32 menuId)
                     canSeeQuests = false;
                 continue;
             }
+        }
         }
 
         if (pSource->GetTypeId() == TYPEID_UNIT)
@@ -14166,7 +14190,18 @@ uint32 Player::GetGossipTextId(uint32 menuId, WorldObject* pSource)
 
     GossipMenusMapBounds pMenuBounds = sObjectMgr.GetGossipMenusMapBounds(menuId);
 
-    for(GossipMenusMap::const_iterator itr = pMenuBounds.first; itr != pMenuBounds.second; ++itr)
+    for (GossipMenusMap::const_iterator itr = pMenuBounds.first; itr != pMenuBounds.second; ++itr)
+    {
+        if (itr->second.conditionId && sObjectMgr.IsPlayerMeetToNEWCondition(this, itr->second.conditionId))
+        {
+            textId = itr->second.text_id;
+
+            // Start related script
+            if (itr->second.script_id)
+                GetMap()->ScriptsStart(sGossipScripts, itr->second.script_id, this, pSource);
+            break;
+        }
+        else if (!itr->second.conditionId)
     {
         if (sObjectMgr.IsPlayerMeetToCondition(this, itr->second.cond_1) && sObjectMgr.IsPlayerMeetToCondition(this, itr->second.cond_2))
         {
@@ -14177,6 +14212,7 @@ uint32 Player::GetGossipTextId(uint32 menuId, WorldObject* pSource)
                 GetMap()->ScriptsStart(sGossipScripts, itr->second.script_id, this, pSource);
             break;
         }
+    }
     }
 
     return textId;
@@ -16435,37 +16471,39 @@ bool Player::LoadFromDB(ObjectGuid guid, SqlQueryHolder *holder )
 
         player_at_bg = currentBg && currentBg->IsPlayerInBattleGround(GetObjectGuid());
 
-        if (player_at_bg && currentBg->GetStatus() != STATUS_WAIT_LEAVE)
+        if (player_at_bg)
         {
-            BattleGroundQueueTypeId bgQueueTypeId = BattleGroundMgr::BGQueueTypeId(currentBg->GetTypeID(), currentBg->GetArenaType());
-            AddBattleGroundQueueId(bgQueueTypeId);
+            if (currentBg->GetStatus() != STATUS_WAIT_LEAVE)
+            {
+                BattleGroundQueueTypeId bgQueueTypeId = BattleGroundMgr::BGQueueTypeId(currentBg->GetTypeID(), currentBg->GetArenaType());
+                AddBattleGroundQueueId(bgQueueTypeId);
 
-            m_bgData.bgTypeID = currentBg->GetTypeID();     // bg data not marked as modified
+                m_bgData.bgTypeID = currentBg->GetTypeID();     // bg data not marked as modified
 
-            //join player to battleground group
-            currentBg->EventPlayerLoggedIn(this, GetObjectGuid());
-            currentBg->AddOrSetPlayerToCorrectBgGroup(this, GetObjectGuid(), m_bgData.bgTeam);
+                //join player to battleground group
+                currentBg->EventPlayerLoggedIn(this, GetObjectGuid());
+                currentBg->AddOrSetPlayerToCorrectBgGroup(this, GetObjectGuid(), m_bgData.bgTeam);
 
-            SetInviteForBattleGroundQueueType(bgQueueTypeId,currentBg->GetInstanceID());
-        }
-        else
-        {
-            // leave bg
-            if (player_at_bg)
+                SetInviteForBattleGroundQueueType(bgQueueTypeId,currentBg->GetInstanceID());
+
+                SetLocationMapId(savedLocation.mapid);
+                Relocate(savedLocation.coord_x, savedLocation.coord_y, savedLocation.coord_z, savedLocation.orientation);
+            }
+            else
             {
                 currentBg->RemovePlayerAtLeave(GetObjectGuid(), false, true);
                 player_at_bg = false;
+
+                // move to bg enter point
+                const WorldLocation& _loc = GetBattleGroundEntryPoint();
+                SetLocationMapId(_loc.mapid);
+                Relocate(_loc.coord_x, _loc.coord_y, _loc.coord_z, _loc.orientation);
+
+                // We are not in BG anymore
+                SetBattleGroundId(0, BATTLEGROUND_TYPE_NONE);
+                // remove outdated DB data in DB
+                _SaveBGData(true);
             }
-
-            // move to bg enter point
-            const WorldLocation& _loc = GetBattleGroundEntryPoint();
-            SetLocationMapId(_loc.mapid);
-            Relocate(_loc.coord_x, _loc.coord_y, _loc.coord_z, _loc.orientation);
-
-            // We are not in BG anymore
-            SetBattleGroundId(0, BATTLEGROUND_TYPE_NONE);
-            // remove outdated DB data in DB
-            _SaveBGData(true);
         }
     }
     else
@@ -16790,8 +16828,11 @@ bool Player::LoadFromDB(ObjectGuid guid, SqlQueryHolder *holder )
     if (m_bgData.HasTaxiPath())
     {
         m_taxi.ClearTaxiDestinations();
-        for (int i = 0; i < 2; ++i)
-            m_taxi.AddTaxiDestination(m_bgData.taxiPath[i]);
+        if (!player_at_bg)
+        {
+            for (int i = 0; i < 2; ++i)
+                m_taxi.AddTaxiDestination(m_bgData.taxiPath[i]);
+        }
     }
     else if (!m_taxi.LoadTaxiDestinationsFromString(taxi_nodes, GetTeam()))
     {
@@ -21674,7 +21715,8 @@ void Player::SendAurasForTarget(Unit *target)
 
 void Player::SetDailyQuestStatus( uint32 quest_id )
 {
-    for(uint32 quest_daily_idx = 0; quest_daily_idx < PLAYER_MAX_DAILY_QUESTS; ++quest_daily_idx)
+    uint32 quest_daily_idx;
+    for(quest_daily_idx = 0; quest_daily_idx < PLAYER_MAX_DAILY_QUESTS; ++quest_daily_idx)
     {
         if(!GetUInt32Value(PLAYER_FIELD_DAILY_QUESTS_1+quest_daily_idx))
         {
@@ -21683,6 +21725,9 @@ void Player::SetDailyQuestStatus( uint32 quest_id )
             break;
         }
     }
+    // if first daily quest at curent day
+    if (!quest_daily_idx)
+        GetAchievementMgr().UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_DAILY_QUEST_DAILY, 1);
 }
 
 void Player::SetWeeklyQuestStatus( uint32 quest_id )
@@ -21699,8 +21744,17 @@ void Player::SetMonthlyQuestStatus(uint32 quest_id)
 
 void Player::ResetDailyQuestStatus()
 {
-    for(uint32 quest_daily_idx = 0; quest_daily_idx < PLAYER_MAX_DAILY_QUESTS; ++quest_daily_idx)
+    uint32 dailyQuestCount = 0;
+    for(uint32 quest_daily_idx = 0; quest_daily_idx < PLAYER_MAX_DAILY_QUESTS; ++quest_daily_idx)   
+    {
+        if(GetUInt32Value(PLAYER_FIELD_DAILY_QUESTS_1+quest_daily_idx))
+            ++dailyQuestCount;
         SetUInt32Value(PLAYER_FIELD_DAILY_QUESTS_1+quest_daily_idx,0);
+    }
+
+    // Reset daily_quest_daily if there are no daily quest last day
+    if(!dailyQuestCount)
+        GetAchievementMgr().ResetAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_DAILY_QUEST_DAILY,ACHIEVEMENT_CRITERIA_CONDITION_DAILY);
 
     // DB data deleted in caller
     m_DailyQuestChanged = false;
@@ -22166,6 +22220,8 @@ void Player::RewardSinglePlayerAtKill(Unit* pVictim)
     // honor can be in PvP and !PvP (racial leader) cases
     RewardHonor(pVictim,1);
 
+    GetAchievementMgr().UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_GET_KILLING_BLOWS, 1, 0, pVictim);
+
     // xp and reputation only in !PvP case
     if(!PvP)
     {
@@ -22178,7 +22234,11 @@ void Player::RewardSinglePlayerAtKill(Unit* pVictim)
         // normal creature (not pet/etc) can be only in !PvP case
         if (pVictim->GetTypeId()==TYPEID_UNIT)
             if (CreatureInfo const* normalInfo = ObjectMgr::GetCreatureTemplate(pVictim->GetEntry()))
+            {
                 KilledMonster(normalInfo, pVictim->GetObjectGuid());
+                if(uint32 normalType = normalInfo->type)
+                    GetAchievementMgr().UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_KILL_CREATURE_TYPE, normalType, xp);
+            }
     }
 }
 
@@ -25186,7 +25246,7 @@ void Player::InterruptTaxiFlying()
     {
         GetUnitStateMgr().DropAction(UNIT_ACTION_TAXI);
         m_taxi.ClearTaxiDestinations();
-        GetUnitStateMgr().InitDefaults();
+        GetUnitStateMgr().InitDefaults(false);
     }
     // save only in non-flight case
     else

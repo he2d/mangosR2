@@ -191,7 +191,7 @@ pEffect SpellEffects[TOTAL_SPELL_EFFECTS]=
     &Spell::EffectApplyAreaAura,                            //128 SPELL_EFFECT_APPLY_AREA_AURA_FRIEND
     &Spell::EffectApplyAreaAura,                            //129 SPELL_EFFECT_APPLY_AREA_AURA_ENEMY
     &Spell::EffectRedirectThreat,                           //130 SPELL_EFFECT_REDIRECT_THREAT
-    &Spell::EffectUnused,                                   //131 SPELL_EFFECT_131                      used in some test spells
+    &Spell::EffectPlaySound,                                //131 SPELL_EFFECT_PLAY_SOUND               sound id in misc value (SoundEntries.dbc)
     &Spell::EffectPlayMusic,                                //132 SPELL_EFFECT_PLAY_MUSIC               sound id in misc value (SoundEntries.dbc)
     &Spell::EffectUnlearnSpecialization,                    //133 SPELL_EFFECT_UNLEARN_SPECIALIZATION   unlearn profession specialization
     &Spell::EffectKillCreditGroup,                          //134 SPELL_EFFECT_KILL_CREDIT_GROUP        misc value is creature entry
@@ -287,17 +287,19 @@ void Spell::EffectInstaKill(SpellEffectIndex /*eff_idx*/)
 
 void Spell::EffectEnvironmentalDMG(SpellEffectIndex eff_idx)
 {
-    uint32 absorb = 0;
-    uint32 resist = 0;
-
     // Note: this hack with damage replace required until GO casting not implemented
     // environment damage spells already have around enemies targeting but this not help in case nonexistent GO casting support
     // currently each enemy selected explicitly and self cast damage, we prevent apply self casted spell bonuses/etc
+    DamageInfo damageInfo = DamageInfo(m_caster,m_caster,m_spellInfo);
+    damageInfo.damage     = damage;
+    damageInfo.damageType = SELF_DAMAGE;
+
     damage = m_spellInfo->CalculateSimpleValue(eff_idx);
 
-    m_caster->CalculateDamageAbsorbAndResist(m_caster, GetSpellSchoolMask(m_spellInfo), SPELL_DIRECT_DAMAGE, damage, &absorb, &resist);
+    m_caster->CalculateDamageAbsorbAndResist(m_caster, &damageInfo);
 
-    m_caster->SendSpellNonMeleeDamageLog(m_caster, m_spellInfo->Id, damage, GetSpellSchoolMask(m_spellInfo), absorb, resist, false, 0, false);
+    m_caster->SendSpellNonMeleeDamageLog(&damageInfo);
+
     if (m_caster->GetTypeId() == TYPEID_PLAYER)
         ((Player*)m_caster)->EnvironmentalDamage(DAMAGE_FIRE, damage);
 }
@@ -8101,14 +8103,19 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
                     unitTarget->CastSpell(unitTarget, 27699, true);
                     return;
                 }
-                case 28374:                                 // Decimate (Gluth encounter)
+                case 28374:                                 // Decimate (Naxxramas: Gluth)
+                case 54426:                                 // Decimate (Naxxramas: Gluth (spells are identical))
+                case 71123:                                 // Decimate (ICC: Precious / Stinky)
                 {
-                    if (unitTarget && unitTarget != m_caster)
-                    {
-                        if (unitTarget->GetHealthPercent() > 5.0f)
-                            m_caster->CastSpell(unitTarget, 28375, true);
-                    }
-                    break;
+                    if (!unitTarget)
+                        return;
+
+                    float downToHealthPercent = (m_spellInfo->Id != 71123 ? 5 : m_spellInfo->CalculateSimpleValue(eff_idx)) * 0.01f;
+
+                    int32 damage = unitTarget->GetHealth() - unitTarget->GetMaxHealth() * downToHealthPercent;
+                    if (damage > 0)
+                        m_caster->CastCustomSpell(unitTarget, 28375, &damage, NULL, NULL, true);
+                    return;
                 }
                 case 28560:                                 // Summon Blizzard
                 {
@@ -12197,21 +12204,35 @@ void Spell::EffectRenamePet(SpellEffectIndex /*eff_idx*/)
     unitTarget->SetByteFlag(UNIT_FIELD_BYTES_2, 2, UNIT_CAN_BE_RENAMED | UNIT_CAN_BE_ABANDONED);
 }
 
+void Spell::EffectPlaySound(SpellEffectIndex eff_idx)
+{
+    if (!unitTarget || unitTarget->GetTypeId() != TYPEID_PLAYER)
+        return;
+
+    uint32 soundId = m_spellInfo->EffectMiscValue[eff_idx];
+    if (!sSoundEntriesStore.LookupEntry(soundId))
+    {
+        sLog.outError("EffectPlaySound: Sound (Id: %u) in spell %u does not exist.", soundId, m_spellInfo->Id);
+        return;
+    }
+
+    unitTarget->PlayDirectSound(soundId, (Player*)unitTarget);
+}
+
 void Spell::EffectPlayMusic(SpellEffectIndex eff_idx)
 {
     if (!unitTarget || unitTarget->GetTypeId() != TYPEID_PLAYER)
         return;
 
-    uint32 soundid = m_spellInfo->EffectMiscValue[eff_idx];
-
-    if (!sSoundEntriesStore.LookupEntry(soundid))
+    uint32 soundId = m_spellInfo->EffectMiscValue[eff_idx];
+    if (!sSoundEntriesStore.LookupEntry(soundId))
     {
-        sLog.outError("EffectPlayMusic: Sound (Id: %u) not exist in spell %u.",soundid,m_spellInfo->Id);
+        sLog.outError("EffectPlayMusic: Sound (Id: %u) in spell %u does not exist.", soundId, m_spellInfo->Id);
         return;
     }
 
     WorldPacket data(SMSG_PLAY_MUSIC, 4);
-    data << uint32(soundid);
+    data << uint32(soundId);
     ((Player*)unitTarget)->GetSession()->SendPacket(&data);
 }
 

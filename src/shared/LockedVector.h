@@ -123,14 +123,26 @@ namespace ACE_Based
                 }
             }
 
-            void find(const T& item)
+            T* find(const T& item)
             {
                 ReadGuard Guard(GetLock());
-                for (size_type i = 0; i < m_storage.size();)
+                for (size_type i = 0; i < m_storage.size(); ++i)
                 {
                     if (item == m_storage[i])
                         return &m_storage[i];
                 }
+                return NULL;
+            }
+
+            const T* find(const T& item) const
+            {
+                ReadGuard Guard(GetLock());
+                for (size_type i = 0; i < m_storage.size(); ++i)
+                {
+                    if (item == m_storage[i])
+                        return &m_storage[i];
+                }
+                return NULL;
             }
 
             void clear()
@@ -142,8 +154,12 @@ namespace ACE_Based
             T& operator[](size_type idx) 
             {
                 ReadGuard Guard(GetLock());
-//                if (idx >= m_storage.size() || idx < 0)
-//                    return NULL;
+                return m_storage[idx];
+            }
+
+            const T& operator[](size_type idx) const
+            {
+                ReadGuard Guard(GetLock());
                 return m_storage[idx];
             }
 
@@ -160,6 +176,18 @@ namespace ACE_Based
             }
 
             T& back()
+            {
+                ReadGuard Guard(GetLock());
+                return m_storage.back();
+            }
+
+            const T& front() const
+            {
+                ReadGuard Guard(GetLock());
+                return m_storage.front();
+            }
+
+            const T& back() const
             {
                 ReadGuard Guard(GetLock());
                 return m_storage.back();
@@ -189,6 +217,18 @@ namespace ACE_Based
                 return m_storage.end();
             }
 
+            reverse_iterator rbegin()
+            {
+                ReadGuard Guard(GetLock());
+                return m_storage.rbegin();
+            }
+
+            reverse_iterator rend()
+            {
+                ReadGuard Guard(GetLock());
+                return m_storage.rend();
+            }
+
             const_reverse_iterator rbegin() const
             {
                 ReadGuard Guard(GetLock());
@@ -213,7 +253,7 @@ namespace ACE_Based
                 return    m_storage.size();
             }
 
-            LockedVector&    operator=(const std::vector<T> &v)
+            LockedVector& operator=(const std::vector<T> &v)
             {
                 clear();
                 WriteGuard Guard(GetLock());
@@ -233,7 +273,7 @@ namespace ACE_Based
                 }
             }
 
-            LockedVector&    operator=(const std::list<T> &v)
+            LockedVector& operator=(const std::list<T> &v)
             {
                 clear();
                 WriteGuard Guard(GetLock());
@@ -253,23 +293,32 @@ namespace ACE_Based
                 }
             }
 
-            LockedVector&    operator=(const LockedVector<T> &v)
+            LockedVector& operator=(const LockedVector<T> &v)
             {
                 WriteGuard Guard(GetLock());
-                for (typename LockedVector<T>::const_iterator i = v.begin(); i != v.end(); ++i) 
-                {
-                    this->push_back(*i);
-                }
+                ReadGuard GuardX(v.GetLock());
+                m_storage = v.m_storage;
                 return *this;
             }
 
             LockedVector(const LockedVector<T> &v)
             {
                 WriteGuard Guard(GetLock());
-                for (typename LockedVector<T>::const_iterator i = v.begin(); i != v.end(); ++i) 
-                {
-                    this->push_back(*i);
-                }
+                ReadGuard GuardX(v.GetLock());
+                m_storage = v.m_storage;
+            }
+
+            void swap(LockedVector<T, Allocator>& x)
+            {
+                WriteGuard Guard(GetLock());
+                WriteGuard GuardX(x.GetLock());
+                m_storage.swap(x.m_storage); 
+            }
+
+            void resize(size_type num, T def = T())
+            {
+                WriteGuard Guard(GetLock());
+                m_storage.resize(num, def);
             }
 
             //Allocator

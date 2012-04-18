@@ -928,9 +928,13 @@ void ScriptAction::HandleScriptStep()
     DEBUG_LOG("DB-SCRIPTS: Process table `%s` id %u, command %u for source %s (%sin world), target %s (%sin world)", m_table, m_script->id, m_script->command, m_sourceGuid.GetString().c_str(), source ? "" : "not ", m_targetGuid.GetString().c_str(), target ? "" : "not ");
 
     // Get expected source and target (if defined with buddy)
-    WorldObject* pSource = source && source->isType(TYPEMASK_WORLDOBJECT) ? (WorldObject*)source : NULL;
-    WorldObject* pTarget = target && target->isType(TYPEMASK_WORLDOBJECT) ? (WorldObject*)target : NULL;
-    if (!GetScriptProcessTargets(pSource, pTarget, pSource, pTarget))
+    WorldObject* pOriginSource = source && source->isType(TYPEMASK_WORLDOBJECT) ? (WorldObject*)source : NULL;
+    WorldObject* pOriginTarget = target && target->isType(TYPEMASK_WORLDOBJECT) ? (WorldObject*)target : NULL;
+
+    WorldObject* pSource = NULL;
+    WorldObject* pTarget = NULL;
+
+    if (!GetScriptProcessTargets(pOriginSource, pOriginTarget, pSource, pTarget))
         return;
 
     switch (m_script->command)
@@ -1036,13 +1040,21 @@ void ScriptAction::HandleScriptStep()
                 break;
             }
 
-            if (m_script->moveTo.travelTime != 0)
+            // For command additional teleport the unit
+            if (m_script->data_flags & SCRIPT_FLAG_COMMAND_ADDITIONAL)
             {
-                float speed = ((Unit*)pSource)->GetDistance(m_script->x, m_script->y, m_script->z) / ((float)m_script->moveTo.travelTime * 0.001f);
-                ((Unit*)pSource)->MonsterMoveWithSpeed(m_script->x, m_script->y, m_script->z, speed);
-            }
-            else
                 ((Unit*)pSource)->NearTeleportTo(m_script->x, m_script->y, m_script->z, m_script->o != 0.0f ? m_script->o : ((Unit*)pSource)->GetOrientation());
+                break;
+            }
+
+            // Normal Movement
+            if (m_script->moveTo.travelSpeed)
+                ((Unit*)pSource)->MonsterMoveWithSpeed(m_script->x, m_script->y, m_script->z, m_script->moveTo.travelSpeed * 0.01f);
+            else
+            {
+                ((Unit*)pSource)->GetMotionMaster()->Clear();
+                ((Unit*)pSource)->GetMotionMaster()->MovePoint(0, m_script->x, m_script->y, m_script->z);
+            }
             break;
         }
         case SCRIPT_COMMAND_FLAG_SET:
@@ -1175,8 +1187,7 @@ void ScriptAction::HandleScriptStep()
 
             pGo->SetLootState(GO_READY);
             pGo->SetRespawnTime(time_to_despawn);       //despawn object in ? seconds
-
-            pGo->GetMap()->Add(pGo);
+            pGo->Refresh();
             break;
         }
         case SCRIPT_COMMAND_TEMP_SUMMON_CREATURE:
@@ -1447,8 +1458,26 @@ void ScriptAction::HandleScriptStep()
             if (LogIfNotUnit(pTarget))
                 break;
 
-            Creature* pAttacker = static_cast<Creature*>(pSource);
-            Unit* unitTarget = static_cast<Unit*>(target);
+            ObjectGuid sourceGuid = pSource->GetObjectGuid();
+            ObjectGuid targetGuid = pTarget->GetObjectGuid();
+
+            if (sourceGuid == targetGuid)
+            {
+                sLog.outError(" DB-SCRIPTS: Process table `%s` id %u, command %u attacker try attack self, can not attack (Attacker: %s, Target: %s)", m_table, m_script->id, m_script->command, sourceGuid.GetString().c_str(), targetGuid.GetString().c_str());
+                break;
+            }
+
+            // fix for possible not-in-map script objects
+            Creature* pAttacker  = m_map->GetCreature(sourceGuid);
+            Unit* unitTarget     = m_map->GetUnit(targetGuid);
+
+            if (!unitTarget || !pAttacker ||
+                !unitTarget->IsInWorld() || !pAttacker->IsInWorld() ||
+                !unitTarget->isInAccessablePlaceFor(pAttacker))
+            {
+                sLog.outError(" DB-SCRIPTS: Process table `%s` id %u, command %u target not accessable to attacker by some reason, can not attack (Attacker: %s, Target: %s)", m_table, m_script->id, m_script->command, sourceGuid.GetString().c_str(), targetGuid.GetString().c_str());
+                break;
+            }
 
             if (pAttacker->IsFriendlyTo(unitTarget))
             {
@@ -1456,7 +1485,8 @@ void ScriptAction::HandleScriptStep()
                 break;
             }
 
-            pAttacker->AI()->AttackStart(unitTarget);
+            if (pAttacker->AI())
+                pAttacker->AI()->AttackStart(unitTarget);
 
             break;
         }

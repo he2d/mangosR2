@@ -365,6 +365,7 @@ class Spell
         void EffectWMOChange(SpellEffectIndex eff_idx);
         void EffectTitanGrip(SpellEffectIndex eff_idx);
         void EffectEnchantItemPrismatic(SpellEffectIndex eff_idx);
+        void EffectPlaySound(SpellEffectIndex eff_idx);
         void EffectPlayMusic(SpellEffectIndex eff_idx);
         void EffectSpecCount(SpellEffectIndex eff_idx);
         void EffectActivateSpec(SpellEffectIndex eff_idx);
@@ -398,7 +399,7 @@ class Spell
         void _handle_finish_phase();
 
         SpellCastResult CheckItems();
-        SpellCastResult CheckRange(bool strict);
+        SpellCastResult CheckRange(bool strict, WorldObject* target = NULL);
         SpellCastResult CheckPower();
         SpellCastResult CheckOrTakeRunePower(bool take);
         SpellCastResult CheckCasterAuras() const;

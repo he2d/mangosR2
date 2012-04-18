@@ -21,6 +21,7 @@
 #define _STATEMGR_H
 
 #include "ObjectHandler.h"
+#include "LockedVector.h"
 #include "Common.h"
 #include "MotionMaster.h"
 #include "StateMgrImpl.h"
@@ -42,6 +43,11 @@ struct ActionInfo
     ~ActionInfo() {};
 
     bool operator < (const ActionInfo& val) const;
+    bool operator == (ActionInfo& val);
+    bool operator == (UnitActionPtr _action);
+    bool operator != (ActionInfo& val);
+    bool operator != (UnitActionPtr _action);
+
     void Delete();
     void Initialize(UnitStateMgr* mgr);
     void Finalize(UnitStateMgr* mgr);
@@ -61,10 +67,11 @@ struct ActionInfo
     UnitActionPtr      action;
     UnitActionPriority priority;
     uint32             m_flags;
-    bool const         restoreable;
+    bool               restoreable;
 };
 
-typedef std::map<UnitActionPriority, ActionInfo> UnitActionStorage;
+//typedef std::map<UnitActionPriority, ActionInfo> UnitActionStorage;
+typedef ACE_Based::LockedVector<ActionInfo> UnitActionStorage;
 
 class UnitStateMgr
 {
@@ -77,7 +84,7 @@ public:
     explicit UnitStateMgr(Unit* owner);
     ~UnitStateMgr();
 
-    void InitDefaults();
+    void InitDefaults(bool immediate = true);
 
     void Update(uint32 diff);
 
@@ -86,6 +93,7 @@ public:
     void DropAction(UnitActionId actionId);
     void DropAction(UnitActionId actionId, UnitActionPriority priority);
     void DropAction(UnitActionPriority priority);
+    void DropActionHigherThen(UnitActionPriority priority);
 
     void DropAllStates();
 
@@ -95,11 +103,12 @@ public:
     void PushAction(UnitActionId actionId, UnitActionPtr state, UnitActionPriority priority, eActionType restoreable);
 
     ActionInfo* GetAction(UnitActionPriority priority);
+    ActionInfo* GetAction(UnitActionPtr _action);
 
     UnitActionPtr CurrentAction();
     ActionInfo*   CurrentState();
 
-    UnitActionPtr GetCurrentState() const;
+    UnitActionId  GetCurrentState() { return CurrentState() ? CurrentState()->Id : UNIT_ACTION_IDLE; };
     Unit*         GetOwner() const  { return m_owner; };
 
     std::string const GetOwnerStr();
@@ -111,8 +120,9 @@ public:
 private:
     UnitActionStorage m_actions;
     Unit*             m_owner;
-    ActionInfo*       m_oldAction;
+    UnitActionPtr     m_oldAction;
     uint32            m_stateCounter[UNIT_ACTION_END];
+    bool              m_needReinit;
 
 };
 

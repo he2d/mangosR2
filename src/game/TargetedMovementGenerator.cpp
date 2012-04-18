@@ -101,11 +101,6 @@ void TargetedMovementGeneratorMedium<T,D>::_setTargetLocation(T &owner)
     Movement::MoveSplineInit init(owner);
     init.MovebyPath(i_path->getPath());
     init.SetWalk(((D*)this)->EnableWalking());
-
-    // prevent move to unreachable victim
-    if (targetIsVictim && (i_path->getActualEndPosition() - Vector3(i_target->GetPositionX(),i_target->GetPositionY(),i_target->GetPositionZ())).length() > owner.GetMeleeAttackDistance(owner.getVictim()))
-        return;
-
     init.Launch();
 }
 
@@ -136,15 +131,21 @@ void TargetedMovementGeneratorMedium<Creature,FollowMovementGenerator<Creature> 
 }
 
 #define RECHECK_DISTANCE_TIMER 50
+#define TARGET_NOT_ACCESSIBLE_MAX_TIMER 5000
 
 template<class T, typename D>
 bool TargetedMovementGeneratorMedium<T,D>::Update(T &owner, const uint32 & time_diff)
 {
     if (!i_target.isValid() || !i_target->IsInWorld())
-        return false;
-
-    if (!owner.isAlive() || !owner.IsInWorld())
-        return true;
+    {
+        if (i_targetSearchingTimer >= TARGET_NOT_ACCESSIBLE_MAX_TIMER)
+            return false;
+        else
+        {
+            i_targetSearchingTimer += time_diff;
+            return true;
+        }
+    }
 
     if (owner.hasUnitState(UNIT_STAT_NOT_MOVE))
     {
@@ -176,8 +177,17 @@ bool TargetedMovementGeneratorMedium<T,D>::Update(T &owner, const uint32 & time_
     if (static_cast<D*>(this)->_lostTarget(owner))
     {
         D::_clearUnitStateMove(owner);
-        return true;
+        if (i_targetSearchingTimer >= TARGET_NOT_ACCESSIBLE_MAX_TIMER)
+            return false;
+        else
+        {
+            i_targetSearchingTimer += time_diff;
+            return true;
+        }
     }
+
+    if (!i_target->isInAccessablePlaceFor(&owner))
+        return true;
 
     i_recheckDistance.Update(time_diff);
     if (i_recheckDistance.Passed())
@@ -207,17 +217,15 @@ bool TargetedMovementGeneratorMedium<T,D>::Update(T &owner, const uint32 & time_
 
         if (targetIsVictim && owner.GetTypeId() == TYPEID_UNIT && !((Creature*)&owner)->IsPet())
         {
+            if ((!owner.getVictim() || !owner.getVictim()->isAlive()) && owner.movespline->Finalized())
+                return false;
+
             if (!i_offset && owner.movespline->Finalized() && !owner.CanReachWithMeleeAttack(owner.getVictim())
                 && !i_target->m_movementInfo.HasMovementFlag(MOVEFLAG_PENDINGSTOP))
             {
-                if (i_targetSearchingTimer >= 500)
+                if (i_targetSearchingTimer >= TARGET_NOT_ACCESSIBLE_MAX_TIMER)
                 {
-                    owner.CombatStop(true);
-                    owner.RemoveAllAuras();
-                    owner.DeleteThreatList();
-                    owner.GetMotionMaster()->MoveTargetedHome();
-                    i_targetSearchingTimer = 0;
-                    return true;
+                    return false;
                 }
                 else
                 {
@@ -228,9 +236,23 @@ bool TargetedMovementGeneratorMedium<T,D>::Update(T &owner, const uint32 & time_
             else
                 i_targetSearchingTimer = 0;
         }
+        else
+            i_targetSearchingTimer = 0;
 
         if (targetMoved)
             _setTargetLocation(owner);
+    }
+    else if (i_recheckDistance.Passed())
+    {
+        i_recheckDistance.Reset(RECHECK_DISTANCE_TIMER);
+        //More distance let have better performance, less distance let have more sensitive reaction at target move.
+        float allowed_dist = i_target->GetObjectBoundingRadius() + owner.GetObjectBoundingRadius()
+            + sWorld.getConfig(CONFIG_FLOAT_RATE_TARGET_POS_RECALCULATION_RANGE);
+        float dist = (owner.movespline->FinalDestination() -
+            G3D::Vector3(i_target->GetPositionX(),i_target->GetPositionY(),i_target->GetPositionZ())).squaredLength();
+        if (dist >= allowed_dist * allowed_dist)
+            _setTargetLocation(owner);
+        i_targetSearchingTimer = 0;
     }
 
     if (owner.movespline->Finalized())
@@ -282,6 +304,11 @@ template<class T>
 void ChaseMovementGenerator<T>::Finalize(T &owner)
 {
     owner.clearUnitState(UNIT_STAT_CHASE|UNIT_STAT_CHASE_MOVE);
+    if (owner.GetTypeId() == TYPEID_UNIT && !((Creature*)&owner)->IsPet() && owner.isAlive())
+    {
+        if (!owner.isInCombat() || ( this->i_target.getTarget() && !this->i_target.getTarget()->isInAccessablePlaceFor(&owner)))
+            owner.GetMotionMaster()->MoveTargetedHome();
+    }
 }
 
 template<class T>
