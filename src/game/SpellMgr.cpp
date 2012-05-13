@@ -129,7 +129,7 @@ uint32 GetSpellCastTime(SpellEntry const* spellInfo, Spell const* spell)
         }
     }
 
-    if (spellInfo->Attributes & SPELL_ATTR_RANGED && (!spell || !spell->IsAutoRepeat()))
+    if (spellInfo->HasAttribute(SPELL_ATTR_RANGED) && (!spell || !spell->IsAutoRepeat()))
         castTime += 500;
 
     return (castTime > 0) ? uint32(castTime) : 0;
@@ -302,7 +302,7 @@ WeaponAttackType GetWeaponAttackType(SpellEntry const *spellInfo)
     switch (spellInfo->DmgClass)
     {
         case SPELL_DAMAGE_CLASS_MELEE:
-            if (spellInfo->AttributesEx3 & SPELL_ATTR_EX3_REQ_OFFHAND)
+            if (spellInfo->HasAttribute(SPELL_ATTR_EX3_REQ_OFFHAND))
                 return OFF_ATTACK;
             else
                 return BASE_ATTACK;
@@ -312,7 +312,7 @@ WeaponAttackType GetWeaponAttackType(SpellEntry const *spellInfo)
             break;
         default:
                                                             // Wands
-            if (spellInfo->AttributesEx2 & SPELL_ATTR_EX2_AUTOREPEAT_FLAG)
+            if (spellInfo->HasAttribute(SPELL_ATTR_EX2_AUTOREPEAT_FLAG))
                 return RANGED_ATTACK;
             else
                 return BASE_ATTACK;
@@ -330,7 +330,7 @@ bool IsPassiveSpell(uint32 spellId)
 
 bool IsPassiveSpell(SpellEntry const *spellInfo)
 {
-    return (spellInfo->Attributes & SPELL_ATTR_PASSIVE) != 0;
+    return spellInfo->HasAttribute(SPELL_ATTR_PASSIVE);
 }
 
 bool IsNoStackAuraDueToAura(uint32 spellId_1, uint32 spellId_2)
@@ -360,9 +360,8 @@ bool IsNoStackAuraDueToAura(uint32 spellId_1, uint32 spellId_2)
 bool IsSpellAffectedBySpellMods(SpellEntry const* spellInfo)
 {
     return !(IsPassiveSpell(spellInfo) &&
-            !(spellInfo->Attributes & SPELL_ATTR_ABILITY) &&
-            spellInfo->AttributesEx3 & SPELL_ATTR_EX3_CAN_PROC_WITH_TRIGGERED
-            );
+        !spellInfo->HasAttribute(SPELL_ATTR_ABILITY) &&
+        spellInfo->HasAttribute(SPELL_ATTR_EX3_CAN_PROC_WITH_TRIGGERED));
 }
 
 
@@ -431,7 +430,7 @@ SpellSpecific GetSpellSpecific(uint32 spellId)
             {
                 // Well Fed buffs (must be exclusive with Food / Drink replenishment effects, or else Well Fed will cause them to be removed)
                 // SpellIcon 2560 is Spell 46687, does not have this flag
-                if ((spellInfo->AttributesEx2 & SPELL_ATTR_EX2_FOOD_BUFF) || spellInfo->SpellIconID == 2560)
+                if (spellInfo->HasAttribute(SPELL_ATTR_EX2_FOOD_BUFF) || spellInfo->SpellIconID == 2560)
                     return SPELL_WELL_FED;
                 else if (spellInfo->EffectApplyAuraName[EFFECT_INDEX_0] == SPELL_AURA_MOD_STAT && spellInfo->SpellFamilyName == SPELLFAMILY_GENERIC &&
                      spellInfo->SchoolMask & SPELL_SCHOOL_MASK_NATURE && spellInfo->PreventionType == SPELL_PREVENTION_TYPE_SILENCE)
@@ -478,7 +477,7 @@ SpellSpecific GetSpellSpecific(uint32 spellId)
         case SPELLFAMILY_PRIEST:
         {
             // "Well Fed" buff from Blessed Sunfruit, Blessed Sunfruit Juice, Alterac Spring Water
-            if ((spellInfo->Attributes & SPELL_ATTR_CASTABLE_WHILE_SITTING) &&
+            if (spellInfo->HasAttribute(SPELL_ATTR_CASTABLE_WHILE_SITTING) &&
                 (spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_AUTOATTACK) &&
                 (spellInfo->SpellIconID == 52 || spellInfo->SpellIconID == 79))
                 return SPELL_WELL_FED;
@@ -509,7 +508,7 @@ SpellSpecific GetSpellSpecific(uint32 spellId)
 
             // skip Heart of the Crusader and Judgements of the Just that have also same spell family mask
             if (spellInfo->SpellFamilyFlags.test<CF_PALADIN_JUDGEMENT_OF_RIGHT, CF_PALADIN_JUDGEMENT_OF_WISDOM_LIGHT, CF_PALADIN_JUDGEMENT_OF_JUSTICE, CF_PALADIN_HEART_OF_THE_CRUSADER, CF_PALADIN_JUDGEMENT_OF_BLOOD_MARTYR>() &&
-                (spellInfo->AttributesEx3 & SPELL_ATTR_EX3_UNK9) && !spellInfo->SpellFamilyFlags.test<CF_PALADIN_HEART_OF_THE_CRUSADER,CF_PALADIN_JUDGEMENT_OF_JUST>())
+                (spellInfo->HasAttribute(SPELL_ATTR_EX3_UNK9) && !spellInfo->SpellFamilyFlags.test<CF_PALADIN_HEART_OF_THE_CRUSADER,CF_PALADIN_JUDGEMENT_OF_JUST>()))
                 return SPELL_JUDGEMENT;
 
             // only paladin auras have this (for palaldin class family)
@@ -539,7 +538,7 @@ SpellSpecific GetSpellSpecific(uint32 spellId)
     if ((IsSpellHaveAura(spellInfo, SPELL_AURA_TRACK_CREATURES) ||
         IsSpellHaveAura(spellInfo, SPELL_AURA_TRACK_RESOURCES)  ||
         IsSpellHaveAura(spellInfo, SPELL_AURA_TRACK_STEALTHED)) &&
-        ((spellInfo->AttributesEx & SPELL_ATTR_EX_UNK17) || (spellInfo->AttributesEx6 & SPELL_ATTR_EX6_CASTABLE_ON_VEHICLE)))
+        (spellInfo->HasAttribute(SPELL_ATTR_EX_UNK17) || spellInfo->HasAttribute(SPELL_ATTR_EX6_CASTABLE_ON_VEHICLE)))
         return SPELL_TRACKER;
 
     // elixirs can have different families, but potion most ofc.
@@ -932,7 +931,7 @@ bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
                         spellproto->SpellFamilyName == SPELLFAMILY_GENERIC)
                         return false;
                     // but not this if this first effect (don't found better check)
-                    if (spellproto->Attributes & 0x4000000 && effIndex == EFFECT_INDEX_0)
+                    if (spellproto->HasAttribute(SPELL_ATTR_UNK26) && effIndex == EFFECT_INDEX_0)
                         return false;
                     break;
                 case SPELL_AURA_TRANSFORM:
@@ -1013,7 +1012,7 @@ bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
         return false;
 
     // AttributesEx check
-    if (spellproto->AttributesEx & SPELL_ATTR_EX_NEGATIVE)
+    if (spellproto->HasAttribute(SPELL_ATTR_EX_NEGATIVE))
         return false;
 
     // ok, positive
@@ -1054,7 +1053,7 @@ bool IsNonPositiveSpell(SpellEntry const* spellProto)
     if (!spellProto)
         return false;
 
-    if (spellProto->AttributesEx6 & SPELL_ATTR_EX6_NO_STACK_DEBUFF_MAJOR)
+    if (spellProto->HasAttribute(SPELL_ATTR_EX6_NO_STACK_DEBUFF_MAJOR))
         return true;
 
     if (IsPositiveSpell(spellProto))
@@ -1066,7 +1065,7 @@ bool IsNonPositiveSpell(SpellEntry const* spellProto)
 bool IsSingleTargetSpell(SpellEntry const *spellInfo)
 {
     // all other single target spells have if it has AttributesEx5
-    if ( spellInfo->AttributesEx5 & SPELL_ATTR_EX5_SINGLE_TARGET_SPELL )
+    if (spellInfo->HasAttribute(SPELL_ATTR_EX5_SINGLE_TARGET_SPELL))
         return true;
 
     // TODO - need found Judgements rule
@@ -1142,7 +1141,7 @@ SpellCastResult GetErrorAtShapeshiftedCast (SpellEntry const *spellInfo, uint32 
 
     if (actAsShifted)
     {
-        if (spellInfo->Attributes & SPELL_ATTR_NOT_SHAPESHIFT) // not while shapeshifted
+        if (spellInfo->HasAttribute(SPELL_ATTR_NOT_SHAPESHIFT)) // not while shapeshifted
         {
             //but we must allow cast of Berserk+modifier from any form... where for the hell should we do it?
             if (!(spellInfo->SpellIconID == 1680 && (spellInfo->AttributesEx & 0x8000)))
@@ -1154,7 +1153,7 @@ SpellCastResult GetErrorAtShapeshiftedCast (SpellEntry const *spellInfo, uint32 
     else
     {
         // needs shapeshift
-        if(!(spellInfo->AttributesEx2 & SPELL_ATTR_EX2_NOT_NEED_SHAPESHIFT) && spellInfo->Stances != 0)
+        if(!spellInfo->HasAttribute(SPELL_ATTR_EX2_NOT_NEED_SHAPESHIFT) && spellInfo->Stances != 0)
             return SPELL_FAILED_ONLY_SHAPESHIFT;
     }
 
@@ -1469,7 +1468,7 @@ void SpellMgr::LoadSpellProcEvents()
         spe.schoolMask      = fields[1].GetUInt32();
         spe.spellFamilyName = fields[2].GetUInt32();
 
-        for (int32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+        for (int i = 0; i < MAX_EFFECT_INDEX; ++i)
         {
             spe.spellFamilyMask[i] = ClassFamilyMask(
                 fields[i+3].GetUInt32(),
@@ -1555,7 +1554,7 @@ void SpellMgr::LoadSpellProcItemEnchant()
 
         // also add to high ranks
         DoSpellProcItemEnchant worker(mSpellProcItemEnchantMap, ppmRate);
-        doForHighRanks(entry,worker);
+        doForHighRanks(entry, worker);
 
         ++count;
     } while( result->NextRow() );
@@ -2465,7 +2464,7 @@ bool SpellMgr::IsGroupBuff(SpellEntry const *spellInfo)
 // is holder stackable from different casters
 bool SpellMgr::IsStackableSpellAuraHolder(SpellEntry const* spellInfo)
 {
-    if (spellInfo->AttributesEx3 & SPELL_ATTR_EX3_STACK_FOR_DIFF_CASTERS)
+    if (spellInfo->HasAttribute(SPELL_ATTR_EX3_STACK_FOR_DIFF_CASTERS))
         return true;
 
     if (GetSpellSpecific(spellInfo->Id) == SPELL_JUDGEMENT)
@@ -3187,8 +3186,8 @@ void SpellMgr::LoadSpellScriptTarget()
                 spellProto->EffectImplicitTargetB[i] == TARGET_AREAEFFECT_INSTANT ||
                 spellProto->EffectImplicitTargetA[i] == TARGET_AREAEFFECT_CUSTOM ||
                 spellProto->EffectImplicitTargetB[i] == TARGET_AREAEFFECT_CUSTOM ||
-                spellProto->EffectImplicitTargetA[i] == TARGET_OBJECT_AREA_SRC ||
-                spellProto->EffectImplicitTargetB[i] == TARGET_OBJECT_AREA_SRC ||
+                spellProto->EffectImplicitTargetA[i] == TARGET_AREAEFFECT_GO_AROUND_SOURCE ||
+                spellProto->EffectImplicitTargetB[i] == TARGET_AREAEFFECT_GO_AROUND_SOURCE ||
                 spellProto->EffectImplicitTargetA[i] == TARGET_AREAEFFECT_GO_AROUND_DEST ||
                 spellProto->EffectImplicitTargetB[i] == TARGET_AREAEFFECT_GO_AROUND_DEST)
             {
@@ -3549,7 +3548,7 @@ bool SpellMgr::IsSpellValid(SpellEntry const* spellInfo, Player* pl, bool msg)
     {
         switch(spellInfo->Effect[i])
         {
-            case 0:
+            case SPELL_EFFECT_NONE:
                 continue;
 
             // craft spell for crafting nonexistent item (break client recipes list show)
@@ -3868,7 +3867,7 @@ SpellCastResult SpellMgr::GetSpellAllowedInLocationError(SpellEntry const *spell
     }
 
     // continent limitation (virtual continent), ignore for GM
-    if ((spellInfo->AttributesEx4 & SPELL_ATTR_EX4_CAST_ONLY_IN_OUTLAND) && !(player && player->isGameMaster()))
+    if (spellInfo->HasAttribute(SPELL_ATTR_EX4_CAST_ONLY_IN_OUTLAND) && !(player && player->isGameMaster()))
     {
         uint32 v_map = GetVirtualMapForMapAndZone(map_id, zone_id);
         MapEntry const* mapEntry = sMapStore.LookupEntry(v_map);
@@ -3877,7 +3876,7 @@ SpellCastResult SpellMgr::GetSpellAllowedInLocationError(SpellEntry const *spell
     }
 
     // raid instance limitation
-    if (spellInfo->AttributesEx6 & SPELL_ATTR_EX6_NOT_IN_RAID_INSTANCE)
+    if (spellInfo->HasAttribute(SPELL_ATTR_EX6_NOT_IN_RAID_INSTANCE))
     {
         MapEntry const* mapEntry = sMapStore.LookupEntry(map_id);
         if (!mapEntry || mapEntry->IsRaid())
@@ -3901,13 +3900,13 @@ SpellCastResult SpellMgr::GetSpellAllowedInLocationError(SpellEntry const *spell
     // do not allow spells to be cast in arenas
     // - with SPELL_ATTR_EX4_NOT_USABLE_IN_ARENA flag
     // - with greater than 10 min CD
-    if ((spellInfo->AttributesEx4 & SPELL_ATTR_EX4_NOT_USABLE_IN_ARENA) ||
-         (GetSpellRecoveryTime(spellInfo) > 10 * MINUTE * IN_MILLISECONDS && !(spellInfo->AttributesEx4 & SPELL_ATTR_EX4_USABLE_IN_ARENA)))
+    if (spellInfo->HasAttribute(SPELL_ATTR_EX4_NOT_USABLE_IN_ARENA) ||
+         (GetSpellRecoveryTime(spellInfo) > 10 * MINUTE * IN_MILLISECONDS && !spellInfo->HasAttribute(SPELL_ATTR_EX4_USABLE_IN_ARENA)))
         if (player && player->InArena())
             return SPELL_FAILED_NOT_IN_ARENA;
 
     // Spell casted only on battleground
-    if ((spellInfo->AttributesEx3 & SPELL_ATTR_EX3_BATTLEGROUND))
+    if (spellInfo->HasAttribute(SPELL_ATTR_EX3_BATTLEGROUND))
         if (!player || !player->InBattleGround())
             return SPELL_FAILED_ONLY_BATTLEGROUNDS;
 
@@ -4888,7 +4887,11 @@ SpellEntry const* GetSpellEntryByDifficulty(uint32 id, Difficulty difficulty, bo
     spellDiff->spellId[RAID_DIFFICULTY_10MAN_HEROIC],
     spellDiff->spellId[RAID_DIFFICULTY_25MAN_HEROIC]);
 
-    for (Difficulty diff = difficulty; diff >= REGULAR_DIFFICULTY; diff = GetPrevDifficulty(diff, isRaid))
+
+    SpellEntry const* spellInfo = sSpellStore.LookupEntry(spellDiff->spellId[RAID_DIFFICULTY_10MAN_NORMAL]);
+    bool _isRaid = spellInfo ? (spellInfo->HasAttribute(SPELL_ATTR_EX6_NORMAL_DIFFICULTY) ? false : isRaid) : isRaid;
+
+    for (Difficulty diff = difficulty; diff >= REGULAR_DIFFICULTY; diff = GetPrevDifficulty(diff, _isRaid))
     {
         if (spellDiff->spellId[diff])
             return sSpellStore.LookupEntry(spellDiff->spellId[diff]);
@@ -4940,4 +4943,56 @@ bool IsEffectCauseDamage(SpellEntry const *spellInfo, SpellEffectIndex effecIdx)
         default:
             return true;
     }
+}
+
+SpellPreferredTargetType GetPreferredTargetForSpell(SpellEntry const* spellInfo)
+{
+    if (!spellInfo)
+        return SPELL_PREFERRED_TARGET_SELF;
+
+    if (IsSpellWithCasterSourceTargetsOnly(spellInfo))
+        return SPELL_PREFERRED_TARGET_SELF;
+
+    bool positive = IsExplicitPositiveTarget(spellInfo->Id) || IsPositiveSpell(spellInfo);
+
+    if (IsAreaOfEffectSpell(spellInfo))
+        return positive ? SPELL_PREFERRED_TARGET_SELF : SPELL_PREFERRED_TARGET_VICTIM;
+
+    uint32 firstTarget = spellInfo->EffectImplicitTargetA[EFFECT_INDEX_0];
+
+    if (!IsSpellCauseDamage(spellInfo) && firstTarget == TARGET_DUELVSPLAYER)
+        return SPELL_PREFERRED_TARGET_RANDOM;
+
+    if (positive)
+    {
+        switch (firstTarget)
+        {
+            case TARGET_MASTER:
+                return SPELL_PREFERRED_TARGET_OWNER;
+            case TARGET_SINGLE_FRIEND_2:
+                return SPELL_PREFERRED_TARGET_FRIEND;
+            default:
+                break;
+        }
+
+        if (IsCasterSourceTarget(firstTarget))
+            return SPELL_PREFERRED_TARGET_SELF;
+
+        if (IsSpellAppliesAura(spellInfo))
+            return HasAreaAuraEffect(spellInfo) ? SPELL_PREFERRED_TARGET_SELF : SPELL_PREFERRED_TARGET_FRIEND;
+
+        return SPELL_PREFERRED_TARGET_SELF;
+    }
+    else
+    {
+        if (IsCasterSourceTarget(firstTarget))
+            return SPELL_PREFERRED_TARGET_SELF;
+
+        if (IsSpellCauseDamage(spellInfo))
+            return SPELL_PREFERRED_TARGET_VICTIM;
+
+        return SPELL_PREFERRED_TARGET_ENEMY;
+    }
+
+    return SPELL_PREFERRED_TARGET_SELF;
 }
