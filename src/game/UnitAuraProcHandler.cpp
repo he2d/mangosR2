@@ -1618,6 +1618,16 @@ SpellAuraProcResult Unit::HandleDummyAuraProc(Unit *pVictim, DamageInfo* damageI
                     triggered_spell_id = 37378;
                     break;
                 }
+                // Improved Felhunter (bad description in DBC for triggered aura!)
+                case 56249:
+                {
+                    target = this;
+                    triggered_spell_id = 54425;
+                    // mana gain amount (normal for aura 54037 and doubled for 54038)
+                    if (HasAura(54038))
+                        basepoints[0] = 8;
+                    break;
+                }
                 // Siphon Life
                 case 63108:
                 {
@@ -5287,7 +5297,7 @@ SpellAuraProcResult Unit::IsTriggeredAtCustomProcEvent(Unit *pVictim, SpellAuraH
                 // Default rules for all other auras.
                     if (EventProcFlag || spellProcEvent)
                         return SPELL_AURA_PROC_FAILED;
-                    else if (procFlag & PROC_FLAG_TAKEN_ANY_DAMAGE &&
+                    else if ((procFlag & PROC_FLAG_TAKEN_ANY_DAMAGE) &&
                         ((spellProto->AuraInterruptFlags & AURA_INTERRUPT_FLAG_DAMAGE) ||
                         spellProto->HasAttribute(SPELL_ATTR_BREAKABLE_BY_DAMAGE)))
                         return SPELL_AURA_PROC_OK;
