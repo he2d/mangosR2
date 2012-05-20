@@ -209,7 +209,11 @@ enum ScoreType
     SCORE_SECONDARY_OBJECTIVES  = 15,
     //SA
     SCORE_GATES_DESTROYED       = 16,
-    SCORE_DEMOLISHERS_DESTROYED = 17
+    SCORE_DEMOLISHERS_DESTROYED = 17,
+    /** World of Warcraft Armory **/
+    SCORE_DAMAGE_TAKEN          = 18,
+    SCORE_HEALING_TAKEN         = 19
+    /** World of Warcraft Armory **/
 };
 
 enum BattleGroundType
@@ -294,6 +298,10 @@ class BattleGroundScore
         uint32 BonusHonor;
         uint32 DamageDone;
         uint32 HealingDone;
+        /** World of Warcraft Armory **/
+        uint32 DamageTaken;
+        uint32 HealingTaken;
+        /** World of Warcraft Armory **/
 };
 
 /*
