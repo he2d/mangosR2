@@ -1105,8 +1105,11 @@ uint32 Unit::DealDamage(Unit *pVictim, DamageInfo* damageInfo, bool durabilityLo
                 {
                     if (m->IsRaidOrHeroicDungeon())
                     {
-                        if (cVictim->GetCreatureInfo()->flags_extra & CREATURE_FLAG_EXTRA_INSTANCE_BIND)
+                        if(cVictim->GetCreatureInfo()->flags_extra & CREATURE_FLAG_EXTRA_INSTANCE_BIND)
+                        {
                             ((DungeonMap *)m)->PermBindAllPlayers(creditedPlayer);
+                            creditedPlayer->CreateWowarmoryFeed(3, cVictim->GetCreatureInfo()->Entry, 0, 0);
+                        }
                     }
                     else
                     {
