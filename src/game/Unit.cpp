@@ -895,7 +895,7 @@ uint32 Unit::DealDamage(Unit *pVictim, DamageInfo* damageInfo, bool durabilityLo
                 bg->UpdatePlayerScore(killer, SCORE_DAMAGE_DONE, damageInfo->damage);
                 /** World of Warcraft Armory **/
                 if (BattleGround *bgV = ((Player*)pVictim)->GetBattleGround())
-                    bgV->UpdatePlayerScore(((Player*)pVictim), SCORE_DAMAGE_TAKEN, damage);
+                    bgV->UpdatePlayerScore(((Player*)pVictim), SCORE_DAMAGE_TAKEN, damageInfo->damage);
                 /** World of Warcraft Armory **/
             }
         }
